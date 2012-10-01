@@ -1,0 +1,2 @@
+compile:
+	rebar compile

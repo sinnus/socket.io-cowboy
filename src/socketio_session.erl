@@ -2,21 +2,44 @@
 
 -behaviour(gen_server).
 
+-include("socketio_internal.hrl").
+
 %% API
--export([start_link/0]).
+-export([start_link/2, init/0, configure/3, create/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE).
+-define(ETS, socketio_session_table).
 
--record(state, {}).
+-record(state, {id,
+		callback}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
+configure(Heartbeat, SessionTimeout, Callback) ->
+    #config{heartbeat = Heartbeat,
+	    session_timeout = SessionTimeout,
+	    callback = Callback
+	   }.
 
+init() ->
+    _ = ets:new(?ETS, [public, named_table]),
+    ok.
+
+create(SessionId, Callback) ->
+    {ok, Pid} = socketio_session_sup:start_child(SessionId, Callback),
+    Pid.
+
+find(SessionId) ->
+    case ets:lookup(?ETS, SessionId) of
+        [] ->
+	    {error, not_found};
+        [{_, Pid}] ->
+	    {ok, Pid}
+    end.
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -24,8 +47,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link(SessionId, Callback) ->
+    gen_server:start_link(?MODULE, [SessionId, Callback], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -42,8 +65,13 @@ start_link() ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
-    {ok, #state{}}.
+init([SessionId, Callback]) ->
+    case ets:insert_new(?ETS, {SessionId, self()}) of
+	true ->
+	    {ok, #state{id = SessionId}};
+	false ->
+	    {stop, session_id_exists}
+    end.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -100,7 +128,8 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(_Reason, State = #state{id = SessionId}) ->
+    ets:delete(?ETS, SessionId),
     ok.
 
 %%--------------------------------------------------------------------

@@ -2,24 +2,39 @@
 -behaviour(application).
 -export([start/0, start/2, stop/1]).
 
+-export([open/1, recv/2, close/1]).
+
 start() ->
-	application:start(crypto),
-	application:start(public_key),
-	application:start(ssl),
-	application:start(ranch),
-	application:start(cowboy),
-	application:start(socketio).
+    application:start(crypto),
+    application:start(public_key),
+    application:start(ssl),
+    application:start(ranch),
+    application:start(cowboy),
+    application:start(socketio).
 
 start(_Type, _Args) ->
-	Dispatch = [
+    Dispatch = [
                 {'_', [
-                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, []}
+                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure(3000, 5000, socketio)]}
                       ]}
                ],
-	cowboy:start_http(socketio_http_listener, 100, [{port, 8080}],
+    cowboy:start_http(socketio_http_listener, 100, [{port, 8080}],
                       [{dispatch, Dispatch}]
                      ),
-	socketio_sup:start_link().
+
+    socketio_session:init(),
+    socketio_sup:start_link().
+
+%% ---- Handlers
 
 stop(_State) ->
-	ok.
+    ok.
+
+open(_Pid) ->
+    ok.
+
+recv(_Pid, _Message) ->
+    ok.
+
+close(_Pid) ->
+    ok.

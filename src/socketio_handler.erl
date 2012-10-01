@@ -1,24 +1,38 @@
 -module(socketio_handler).
 -behaviour(cowboy_http_handler).
 
--export([init/3, handle/2, info/3, terminate/2]).
+-include("socketio_internal.hrl").
 
-init({tcp, http}, Req, []) ->
-	{loop, Req, undefined, 600, hibernate}.
+-export([init/3, handle/2, terminate/2]).
 
-handle(Req, State) ->
-    Uuid = uuids:new(),
-    Config = <<":15:10:xhr-polling">>,
-    {ok, Req2} = cowboy_http_req:reply(200, [], <<Uuid/binary, Config/binary>>, Req),
-	{ok, Req2, State}.
+init({tcp, http}, Req, [Config]) ->
+    {ok, Req, Config}.
 
-info({reply, Body}, Req, State) ->
-    {ok, Req2} = cowboy_req:reply(200, [], Body, Req),
-    {ok, Req2, State};
+handle(Req, Config) ->
+    {PathInfo, _} = cowboy_req:path_info(Req),
 
-info(Message, Req, State) ->
-    {loop, Req, State, hibernate}.
+    error_logger:info_msg("PathInfo ~p~n", [PathInfo]),
 
-terminate(_Req, _State) ->
-    error_logger:info_msg("Terminate"),
-	ok.
+    {ok, Req2} = handle_req(PathInfo, Req, Config),
+    {ok, Req2, Config}.
+
+terminate(_Req, _Config) ->
+    ok.
+
+%% ---------------
+handle_req([], Req, Config = #config{heartbeat = Heartbeat, session_timeout = SessionTimeout,
+				     callback = Callback}) ->
+    Sid = uuids:new(),
+
+    HeartbeatBin = list_to_binary(integer_to_list(Heartbeat)),
+    SessionTimeoutBin = list_to_binary(integer_to_list(SessionTimeout)),
+
+    _Pid = socketio_session:create(Sid, Callback),
+
+    Result = <<":", HeartbeatBin/binary, ":", SessionTimeoutBin/binary, ":xhr-polling">>,
+    {ok, Req1} = cowboy_req:reply(200, [], <<Sid/binary, Result/binary>>, Req),
+    {ok, Req1};
+    
+handle_req(_, Req, Config) ->
+    {ok, Req2} = cowboy_req:reply(404, [], <<>>, Req),
+    {ok, Req2}.

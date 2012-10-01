@@ -16,6 +16,9 @@ init([]) ->
            {uuids, {uuids, start, []},
             permanent, 5000, worker, [uuids]},
 
+           {socketio_session_sup, {socketio_session_sup, start_link, []},
+            permanent, 5000, supervisor, [socketio_session_sup]},
+
            {socketio_session_mgr, {socketio_session_mgr, start_link, []},
             permanent, 5000, worker, [socketio_session_mgr]}
 
