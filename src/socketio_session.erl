@@ -5,7 +5,7 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/2, init/0, configure/3, create/2]).
+-export([start_link/4, init/0, configure/3, create/4, find/1, poll/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -14,7 +14,15 @@
 -define(ETS, socketio_session_table).
 
 -record(state, {id,
-		callback}).
+		callback,
+		heartbeat,
+		messages,
+		heartbeat_tref,
+		session_timeout,
+		session_timeout_tref,
+		poller,
+		socket,
+		registered}).
 
 %%%===================================================================
 %%% API
@@ -29,8 +37,8 @@ init() ->
     _ = ets:new(?ETS, [public, named_table]),
     ok.
 
-create(SessionId, Callback) ->
-    {ok, Pid} = socketio_session_sup:start_child(SessionId, Callback),
+create(SessionId, Heartbeat, SessionTimeout, Callback) ->
+    {ok, Pid} = socketio_session_sup:start_child(SessionId, Heartbeat, SessionTimeout, Callback),
     Pid.
 
 find(SessionId) ->
@@ -40,6 +48,9 @@ find(SessionId) ->
         [{_, Pid}] ->
 	    {ok, Pid}
     end.
+
+poll(Pid, Socket) ->
+    gen_server:call(Pid, {poll, Socket}, infinity).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -47,8 +58,8 @@ find(SessionId) ->
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(SessionId, Callback) ->
-    gen_server:start_link(?MODULE, [SessionId, Callback], []).
+start_link(SessionId, Heartbeat, SessionTimeout, Callback) ->
+    gen_server:start_link(?MODULE, [SessionId, Heartbeat, SessionTimeout, Callback], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -65,13 +76,18 @@ start_link(SessionId, Callback) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([SessionId, Callback]) ->
-    case ets:insert_new(?ETS, {SessionId, self()}) of
-	true ->
-	    {ok, #state{id = SessionId}};
-	false ->
-	    {stop, session_id_exists}
-    end.
+init([SessionId, Heartbeat, SessionTimeout, Callback]) ->
+    process_flag(trap_exit, true),
+    error_logger:info_msg("Socketio init session ~p~n", [SessionId]),
+    self() ! register_in_ets,
+    TRef = erlang:send_after(SessionTimeout, self(), session_timeout),
+    {ok, #state{id = SessionId,
+		messages = [],
+		registered = false,
+		callback = Callback,
+		heartbeat = Heartbeat,
+		session_timeout_tref = TRef,
+		session_timeout = SessionTimeout}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -87,6 +103,14 @@ init([SessionId, Callback]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_call({poll, Socket}, From,  State) ->
+    erlang:link(Socket),
+
+    error_logger:info_msg("Socket ~p~n", [Socket]),
+
+    {noreply, State#state{poller = From,
+			  socket = Socket}};
+
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -114,6 +138,24 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info(session_timeout, State) ->
+    error_logger:info_msg("Socketio session ~p timeout~n", [State#state.id]),
+    {stop, normal, State};
+
+handle_info(register_in_ets, State = #state{id = SessionId, registered = false}) ->
+    error_logger:info_msg("Socketio register session ~p~n", [SessionId]),
+
+    case ets:insert_new(?ETS, {SessionId, self()}) of
+	true ->
+	    {noreply, State#state{registered = true}};
+	false ->
+	    {stop, session_id_exists, State}
+    end;
+
+handle_info({'EXIT', Connection, _Reason}, State) ->
+    error_logger:info_msg("Socketio cowboy http request disconnect~n", []),
+    {noreply, State};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -130,6 +172,7 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, State = #state{id = SessionId}) ->
     ets:delete(?ETS, SessionId),
+    error_logger:info_msg("Socketio session ~p terminate~n", [SessionId]),
     ok.
 
 %%--------------------------------------------------------------------
@@ -146,3 +189,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+hook_tcp_close(Req) ->
+    {ok, T, S} = cowboy_http_req:transport(Req),
+    T:setopts(S,[{active,once}]).
+
+unhook_tcp_close(Req) ->
+    {ok, T, S} = cowboy_http_req:transport(Req),
+    T:setopts(S,[{active,false}]).
+
+abruptly_kill(Req) ->
+    {ok, T, S} = cowboy_http_req:transport(Req),
+    T:close(S).

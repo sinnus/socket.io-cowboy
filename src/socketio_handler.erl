@@ -20,17 +20,32 @@ terminate(_Req, _Config) ->
     ok.
 
 %% ---------------
-handle_req([], Req, Config = #config{heartbeat = Heartbeat, session_timeout = SessionTimeout,
+handle_req([], Req, Config = #config{heartbeat = Heartbeat,
+				     session_timeout = SessionTimeout,
 				     callback = Callback}) ->
+
     Sid = uuids:new(),
 
     HeartbeatBin = list_to_binary(integer_to_list(Heartbeat)),
     SessionTimeoutBin = list_to_binary(integer_to_list(SessionTimeout)),
 
-    _Pid = socketio_session:create(Sid, Callback),
+    _Pid = socketio_session:create(Sid, Heartbeat, SessionTimeout, Callback),
 
     Result = <<":", HeartbeatBin/binary, ":", SessionTimeoutBin/binary, ":xhr-polling">>,
     {ok, Req1} = cowboy_req:reply(200, [], <<Sid/binary, Result/binary>>, Req),
+    {ok, Req1};
+
+handle_req([<<"xhr-polling">>, Sid], Req, Config = #config{}) ->
+    Req2 = case socketio_session:find(Sid) of
+	       {ok, Pid} ->
+		   {ok, _Transport, Socket} = cowboy_req:transport(Req),
+		   {ok, Frames} = socketio_session:poll(Pid, Socket),
+		   {ok, Req1} = cowboy_req:reply(200, [], Frames, Req),
+		   Req1;
+	       {error, _} ->
+		   {ok, Req1} = cowboy_req:reply(503, [], <<>>, Req),
+		   Req1
+	   end,
     {ok, Req1};
     
 handle_req(_, Req, Config) ->
