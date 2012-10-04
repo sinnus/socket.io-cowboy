@@ -15,7 +15,7 @@ start() ->
 start(_Type, _Args) ->
     Dispatch = [
                 {'_', [
-                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure(3000, 50000, socketio)]}
+                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure(3000, 500000, socketio)]}
                       ]}
                ],
     cowboy:start_http(socketio_http_listener, 100, [{port, 8080}],

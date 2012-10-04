@@ -36,18 +36,63 @@ handle_req([], Req, Config = #config{heartbeat = Heartbeat,
     {ok, Req1};
 
 handle_req([<<"xhr-polling">>, Sid], Req, Config = #config{}) ->
-    Req2 = case socketio_session:find(Sid) of
-	       {ok, Pid} ->
-		   {ok, _Transport, Socket} = cowboy_req:transport(Req),
-		   {ok, Frames} = socketio_session:poll(Pid, Socket),
-		   {ok, Req1} = cowboy_req:reply(200, [], Frames, Req),
-		   Req1;
-	       {error, _} ->
-		   {ok, Req1} = cowboy_req:reply(503, [], <<>>, Req),
-		   Req1
-	   end,
-    {ok, Req1};
+    case socketio_session:find(Sid) of
+	{ok, Pid} ->
+	    Req1 = poll_loop(Pid, Req),
+	    {ok, Req1};
+	{error, _} ->
+	    cowboy_req:reply(503, [], <<>>, Req)
+    end;
     
 handle_req(_, Req, Config) ->
     {ok, Req2} = cowboy_req:reply(404, [], <<>>, Req),
     {ok, Req2}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+hook_tcp_close(Req) ->
+    {ok, T, S} = cowboy_req:transport(Req),
+    T:setopts(S,[{active,once}]).
+
+unhook_tcp_close(Req) ->
+    {ok, T, S} = cowboy_req:transport(Req),
+    T:setopts(S,[{active,false}]).
+
+abruptly_kill(Req) ->
+    {ok, T, S} = cowboy_req:transport(Req),
+    T:close(S).
+
+poll_loop(Pid, Req) ->
+    hook_tcp_close(Req),
+    case socketio_session:poll(Pid, self()) of
+	wait ->
+	    receive
+		%% In Cowboy we need to capture async
+		%% messages from the tcp connection -
+		%% ie: {active, once}.
+		{tcp_closed, _} ->
+		    %% terminate session process????
+		    Req;
+		%% In Cowboy we may in theory get real
+		%% http requests, this is bad.
+		{tcp, _S, Data} ->
+		    error_logger:error_msg(
+		      "Received unexpected data on a "
+		      "long-polling http connection: ~p. "
+		      "Connection aborted.~n",
+		      [Data]),
+		    Req1 = abruptly_kill(Req),
+		    Req1;
+		go ->
+		    unhook_tcp_close(Req),
+		    poll_loop(Pid, Req)
+	    end;
+	session_in_use ->
+	    {ok, Req2} = cowboy_req:reply(200, [], <<"Session in use">>, Req),
+	    Req2;
+	{close, Messages} ->
+	    error_info:info_msg("Messages ~p~n", [Messages]),
+	    {ok, Req2} = cowboy_req:reply(200, [], <<"Messages">>, Req),
+	    Req2
+    end.

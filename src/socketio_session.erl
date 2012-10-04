@@ -20,8 +20,7 @@
 		heartbeat_tref,
 		session_timeout,
 		session_timeout_tref,
-		poller,
-		socket,
+		caller,
 		registered}).
 
 %%%===================================================================
@@ -49,8 +48,8 @@ find(SessionId) ->
 	    {ok, Pid}
     end.
 
-poll(Pid, Socket) ->
-    gen_server:call(Pid, {poll, Socket}, infinity).
+poll(Pid, Caller) ->
+    gen_server:call(Pid, {poll, Caller}, infinity).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -103,13 +102,22 @@ init([SessionId, Heartbeat, SessionTimeout, Callback]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({poll, Socket}, From,  State) ->
-    erlang:link(Socket),
-
-    error_logger:info_msg("Socket ~p~n", [Socket]),
-
-    {noreply, State#state{poller = From,
-			  socket = Socket}};
+handle_call({poll, Caller}, From,  State = #state{messages = Messages,
+						  caller = CurrentCaller,
+						  heartbeat = Heartbeat}) ->
+    case CurrentCaller of
+	undefined ->
+	    case Messages of
+		[] ->
+		    erlang:send_after(Heartbeat, self(), heartbeat),
+		    {reply, wait, State#state{caller = Caller}};
+		_ ->
+		    {reply, {close, Messages}, State#state{messages = [],
+							   caller = undefined}}
+	    end;
+	_ ->
+	    {reply, session_in_use, State}
+    end;
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -138,6 +146,10 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_info(heartbeat, State = #state{caller = Caller}) ->
+    Caller ! go,
+    {noreply, State#state{caller = undefined}};
+
 handle_info(session_timeout, State) ->
     error_logger:info_msg("Socketio session ~p timeout~n", [State#state.id]),
     {stop, normal, State};
@@ -156,7 +168,8 @@ handle_info({'EXIT', Connection, _Reason}, State) ->
     error_logger:info_msg("Socketio cowboy http request disconnect~n", []),
     {noreply, State};
 
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    error_logger:info_msg("Skip info~n", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -189,14 +202,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-hook_tcp_close(Req) ->
-    {ok, T, S} = cowboy_http_req:transport(Req),
-    T:setopts(S,[{active,once}]).
-
-unhook_tcp_close(Req) ->
-    {ok, T, S} = cowboy_http_req:transport(Req),
-    T:setopts(S,[{active,false}]).
-
-abruptly_kill(Req) ->
-    {ok, T, S} = cowboy_http_req:transport(Req),
-    T:close(S).
