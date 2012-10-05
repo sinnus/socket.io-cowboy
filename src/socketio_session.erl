@@ -5,7 +5,7 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/3, init/0, configure/3, create/3, find/1, pull/2, poll/1, send/2]).
+-export([start_link/3, init/0, configure/3, create/3, find/1, pull/2, poll/1, send/2, recv/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -54,6 +54,9 @@ poll(Pid) ->
 
 send(Pid, Message) ->
     gen_server:cast(Pid, {send, Message}).
+
+recv(Pid, Messages) when is_list(Messages) ->
+    gen_server:call(Pid, {recv, Messages}, infinity).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -116,6 +119,13 @@ handle_call({poll}, _From, State = #state{messages = Messages}) ->
     State1 = refresh_session_timeout(State),
     {reply, lists:reverse(Messages), State1#state{messages = []}};
 
+handle_call({recv, Messages}, _From, State = #state{id = SessionId, callback = Callback}) ->
+    lists:foldl(fun(Message, AccIn) ->
+			Callback:recv(self(), SessionId, Message),
+			AccIn
+		end, ok, Messages),
+    {reply, ok, State};
+
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -154,9 +164,10 @@ handle_cast(_Msg, State) ->
 handle_info(session_timeout, State) ->
     {stop, normal, State};
 
-handle_info(register_in_ets, State = #state{id = SessionId, registered = false}) ->
+handle_info(register_in_ets, State = #state{id = SessionId, registered = false, callback = Callback}) ->
     case ets:insert_new(?ETS, {SessionId, self()}) of
         true ->
+	    Callback:open(self(), SessionId),
             {noreply, State#state{registered = true}};
         false ->
             {stop, session_id_exists, State}
@@ -179,8 +190,15 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State = #state{id = SessionId}) ->
+terminate(_Reason, _State = #state{id = SessionId, registered = Registered, callback = Callback}) ->
     ets:delete(?ETS, SessionId),
+    case Registered of
+	true ->
+	    Callback:close(self(), SessionId),
+	    ok;
+	_ ->
+	    ok
+    end,
     ok.
 
 %%--------------------------------------------------------------------

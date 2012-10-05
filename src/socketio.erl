@@ -29,11 +29,14 @@ stop(_State) ->
     ok.
 
 %% ---- Handlers
-open(_Pid, _Sid) ->
+open(Pid, Sid) ->
+    error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
     ok.
 
-recv(_Pid, _Sid, _Message) ->
+recv(Pid, Sid, Message) ->
+    error_logger:info_msg("recv ~p ~p ~p~n", [Pid, Sid, Message]),
     ok.
 
-close(_Pid, _Sid) ->
+close(Pid, Sid) ->
+    error_logger:info_msg("close ~p ~p~n", [Pid, Sid]),
     ok.

@@ -27,11 +27,13 @@ init({tcp, http}, Req, [Config]) ->
         [<<"xhr-polling">>, Sid, <<"send">>] ->
             case socketio_session:find(Sid) of
                 {ok, Pid} ->
-                    socketio_session:send(Pid, <<"MESSAGE">>),
+                    socketio_session:recv(Pid, [<<"MESSAGE">>]),
                     {ok, Req, {send, Config}};
                 {error, not_found} ->
                     {ok, Req, {not_found, Sid, Config}}
-            end
+            end;
+	_ ->
+	    {ok, Req, Config}
     end.
 
 handle(Req, {create_session, Config = #config{heartbeat = Heartbeat,
