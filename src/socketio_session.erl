@@ -152,7 +152,6 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(session_timeout, State) ->
-    error_logger:info_msg("Socketio session ~p timeout~n", [State#state.id]),
     {stop, normal, State};
 
 handle_info(register_in_ets, State = #state{id = SessionId, registered = false}) ->
