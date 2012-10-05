@@ -102,20 +102,29 @@ init([SessionId, Heartbeat, SessionTimeout, Callback]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({poll, Caller}, From,  State = #state{messages = Messages,
-						  caller = CurrentCaller,
-						  heartbeat = Heartbeat}) ->
-    case CurrentCaller of
+handle_call({poll, Pid}, _From,  State = #state{caller = CPid})
+  when Pid =/= CPid andalso CPid =/= undefined ->
+    {reply, session_in_use, State};
+
+handle_call({poll, Pid}, _From,  State = #state{messages = Messages,
+						caller = CPid,
+						heartbeat_tref = HeartbeatTRef})
+  when Pid == CPid orelse CPid == undefined ->
+    case {Messages, HeartbeatTRef} of
+	{triggered
+
 	undefined ->
 	    case Messages of
 		[] ->
-		    erlang:send_after(Heartbeat, self(), heartbeat),
-		    {reply, wait, State#state{caller = Caller}};
+		    TRef = erlang:send_after(Heartbeat, self(), heartbeat),
+		    {reply, wait, State#state{caller = Caller, heartbeat_tref = TRef}};
 		_ ->
 		    {reply, {close, Messages}, State#state{messages = [],
 							   caller = undefined}}
 	    end;
 	_ ->
+	    {ok, 
+
 	    {reply, session_in_use, State}
     end;
 
@@ -148,7 +157,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info(heartbeat, State = #state{caller = Caller}) ->
     Caller ! go,
-    {noreply, State#state{caller = undefined}};
+    {noreply, State#state{heartbeat_tref = triggered}};
 
 handle_info(session_timeout, State) ->
     error_logger:info_msg("Socketio session ~p timeout~n", [State#state.id]),
