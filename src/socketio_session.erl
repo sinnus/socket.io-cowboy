@@ -5,7 +5,7 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/4, init/0, configure/3, create/4, find/1, poll/2]).
+-export([start_link/3, init/0, configure/3, create/3, find/1, pull/2, poll/1, send/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -14,42 +14,46 @@
 -define(ETS, socketio_session_table).
 
 -record(state, {id,
-		callback,
-		heartbeat,
-		messages,
-		heartbeat_tref,
-		session_timeout,
-		session_timeout_tref,
-		caller,
-		registered}).
+                callback,
+                messages,
+                session_timeout,
+                session_timeout_tref,
+                caller,
+                registered}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 configure(Heartbeat, SessionTimeout, Callback) ->
     #config{heartbeat = Heartbeat,
-	    session_timeout = SessionTimeout,
-	    callback = Callback
-	   }.
+            session_timeout = SessionTimeout,
+            callback = Callback
+           }.
 
 init() ->
     _ = ets:new(?ETS, [public, named_table]),
     ok.
 
-create(SessionId, Heartbeat, SessionTimeout, Callback) ->
-    {ok, Pid} = socketio_session_sup:start_child(SessionId, Heartbeat, SessionTimeout, Callback),
+create(SessionId, SessionTimeout, Callback) ->
+    {ok, Pid} = socketio_session_sup:start_child(SessionId, SessionTimeout, Callback),
     Pid.
 
 find(SessionId) ->
     case ets:lookup(?ETS, SessionId) of
         [] ->
-	    {error, not_found};
+            {error, not_found};
         [{_, Pid}] ->
-	    {ok, Pid}
+            {ok, Pid}
     end.
 
-poll(Pid, Caller) ->
-    gen_server:call(Pid, {poll, Caller}, infinity).
+pull(Pid, Caller) ->
+    gen_server:call(Pid, {pull, Caller}, infinity).
+
+poll(Pid) ->
+    gen_server:call(Pid, {poll}, infinity).
+
+send(Pid, Message) ->
+    gen_server:cast(Pid, {send, Message}).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -57,8 +61,8 @@ poll(Pid, Caller) ->
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(SessionId, Heartbeat, SessionTimeout, Callback) ->
-    gen_server:start_link(?MODULE, [SessionId, Heartbeat, SessionTimeout, Callback], []).
+start_link(SessionId, SessionTimeout, Callback) ->
+    gen_server:start_link(?MODULE, [SessionId, SessionTimeout, Callback], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -75,18 +79,17 @@ start_link(SessionId, Heartbeat, SessionTimeout, Callback) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([SessionId, Heartbeat, SessionTimeout, Callback]) ->
+init([SessionId, SessionTimeout, Callback]) ->
     process_flag(trap_exit, true),
     error_logger:info_msg("Socketio init session ~p~n", [SessionId]),
     self() ! register_in_ets,
     TRef = erlang:send_after(SessionTimeout, self(), session_timeout),
     {ok, #state{id = SessionId,
-		messages = [],
-		registered = false,
-		callback = Callback,
-		heartbeat = Heartbeat,
-		session_timeout_tref = TRef,
-		session_timeout = SessionTimeout}}.
+                messages = [],
+                registered = false,
+                callback = Callback,
+                session_timeout_tref = TRef,
+                session_timeout = SessionTimeout}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -102,31 +105,12 @@ init([SessionId, Heartbeat, SessionTimeout, Callback]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({poll, Pid}, _From,  State = #state{caller = CPid})
-  when Pid =/= CPid andalso CPid =/= undefined ->
+handle_call({pull, _Pid}, _From,  State = #state{caller = CPid}) when CPid =/= undefined ->
     {reply, session_in_use, State};
 
-handle_call({poll, Pid}, _From,  State = #state{messages = Messages,
-						caller = CPid,
-						heartbeat_tref = HeartbeatTRef})
-  when Pid == CPid orelse CPid == undefined ->
-    case {Messages, HeartbeatTRef} of
-	{triggered
-
-	undefined ->
-	    case Messages of
-		[] ->
-		    TRef = erlang:send_after(Heartbeat, self(), heartbeat),
-		    {reply, wait, State#state{caller = Caller, heartbeat_tref = TRef}};
-		_ ->
-		    {reply, {close, Messages}, State#state{messages = [],
-							   caller = undefined}}
-	    end;
-	_ ->
-	    {ok, 
-
-	    {reply, session_in_use, State}
-    end;
+handle_call({pull, Pid}, _From,  State = #state{messages = Messages, caller = undefined}) ->
+    erlang:monitor(process, Pid),
+    {reply, Messages, State#state{caller = Pid, messages = []}};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -142,6 +126,15 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({send, Message}, State = #state{messages = Messages, caller = Caller}) ->
+    case Caller of
+        undefined ->
+            ok;
+        _ ->
+            Caller ! {message_arrived, self()}
+    end,
+    {noreply, State#state{messages = [Message|Messages]}};
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -155,10 +148,6 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(heartbeat, State = #state{caller = Caller}) ->
-    Caller ! go,
-    {noreply, State#state{heartbeat_tref = triggered}};
-
 handle_info(session_timeout, State) ->
     error_logger:info_msg("Socketio session ~p timeout~n", [State#state.id]),
     {stop, normal, State};
@@ -167,18 +156,17 @@ handle_info(register_in_ets, State = #state{id = SessionId, registered = false})
     error_logger:info_msg("Socketio register session ~p~n", [SessionId]),
 
     case ets:insert_new(?ETS, {SessionId, self()}) of
-	true ->
-	    {noreply, State#state{registered = true}};
-	false ->
-	    {stop, session_id_exists, State}
+        true ->
+            {noreply, State#state{registered = true}};
+        false ->
+            {stop, session_id_exists, State}
     end;
 
-handle_info({'EXIT', Connection, _Reason}, State) ->
-    error_logger:info_msg("Socketio cowboy http request disconnect~n", []),
-    {noreply, State};
+handle_info({'DOWN', _Ref, process, CPid, _Reason}, State = #state{caller = CPid}) ->
+    error_logger:info_msg("Remove caller~n", []),
+    {noreply, State#state{caller = undefined}};
 
-handle_info(Info, State) ->
-    error_logger:info_msg("Skip info~n", [Info]),
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -192,7 +180,7 @@ handle_info(Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, State = #state{id = SessionId}) ->
+terminate(_Reason, _State = #state{id = SessionId}) ->
     ets:delete(?ETS, SessionId),
     error_logger:info_msg("Socketio session ~p terminate~n", [SessionId]),
     ok.

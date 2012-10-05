@@ -2,7 +2,7 @@
 
 -behaviour(supervisor).
 
--export([start_link/0, start_child/4]).
+-export([start_link/0, start_child/3]).
 -export([init/1]).
 
 %% --------------------------------------------------------------------------
@@ -16,5 +16,5 @@ init([]) ->
           [{undefined, {socketio_session, start_link, []},
             transient, 5000, worker, [socketio_session]}]}}.
 
-start_child(SessionId, HeartBeat, SessionTimeout, Callback) ->
-   supervisor:start_child(?MODULE, [SessionId, HeartBeat, SessionTimeout, Callback]).
+start_child(SessionId, SessionTimeout, Callback) ->
+   supervisor:start_child(?MODULE, [SessionId, SessionTimeout, Callback]).
