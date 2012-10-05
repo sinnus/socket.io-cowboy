@@ -37,8 +37,6 @@ init({tcp, http}, Req, [Config]) ->
 handle(Req, {create_session, Config = #config{heartbeat = Heartbeat,
                                               session_timeout = SessionTimeout,
                                               callback = Callback}}) ->
-
-    error_logger:info_msg("Create session~n", []),
     Sid = uuids:new(),
 
     HeartbeatBin = list_to_binary(integer_to_list(Heartbeat)),
@@ -54,9 +52,9 @@ handle(Req, {data, Messages, Config}) ->
     error_logger:info_msg("Messages ~p~n", [Messages]),
     {ok, Req, Config};
 
-handle(Req, {not_found, Sid, Config}) ->
-    error_logger:info_msg("Session ~p not found~n", [Sid]),
-    {ok, Req, Config};
+handle(Req, {not_found, _Sid, Config}) ->
+    {ok, Req1} = cowboy_req:reply(404, [], <<>>, Req),
+    {ok, Req1, Config};
 
 handle(Req, {send, Config}) ->
     {ok, Req1} = cowboy_req:reply(200, [], <<>>, Req),
@@ -75,11 +73,8 @@ info({message_arrived, Pid}, Req, {heartbeat, Config}) ->
     error_logger:info_msg("Messages arrived ~p~n", [Messages]),
     {ok, Req, Config};
 
-info(Info, Req, State) ->
-    error_logger:info_msg("Skip Info ~p not found~n", [Info]),
+info(_Info, Req, State) ->
     {ok, Req, State}.
 
-terminate(_Req, State) ->
-    error_logger:info_msg("terminate ~p~n", [State]),
+terminate(_Req, _State) ->
     ok.
-%% ---------------

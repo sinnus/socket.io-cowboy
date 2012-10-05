@@ -81,7 +81,6 @@ start_link(SessionId, SessionTimeout, Callback) ->
 %%--------------------------------------------------------------------
 init([SessionId, SessionTimeout, Callback]) ->
     process_flag(trap_exit, true),
-    error_logger:info_msg("Socketio init session ~p~n", [SessionId]),
     self() ! register_in_ets,
     TRef = erlang:send_after(SessionTimeout, self(), session_timeout),
     {ok, #state{id = SessionId,
@@ -105,17 +104,21 @@ init([SessionId, SessionTimeout, Callback]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({pull, _Pid}, _From,  State = #state{caller = CPid}) when CPid =/= undefined ->
-    {reply, session_in_use, State};
-
 handle_call({pull, Pid}, _From,  State = #state{messages = Messages, caller = undefined}) ->
     erlang:monitor(process, Pid),
-    {reply, Messages, State#state{caller = Pid, messages = []}};
+    State1 = refresh_session_timeout(State),
+    {reply, lists:reverse(Messages), State1#state{caller = Pid, messages = []}};
+
+handle_call({pull, _Pid}, _From,  State)  ->
+    {reply, session_in_use, State};
+
+handle_call({poll}, _From, State = #state{messages = Messages}) ->
+    State1 = refresh_session_timeout(State),
+    {reply, lists:reverse(Messages), State1#state{messages = []}};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
-
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -153,8 +156,6 @@ handle_info(session_timeout, State) ->
     {stop, normal, State};
 
 handle_info(register_in_ets, State = #state{id = SessionId, registered = false}) ->
-    error_logger:info_msg("Socketio register session ~p~n", [SessionId]),
-
     case ets:insert_new(?ETS, {SessionId, self()}) of
         true ->
             {noreply, State#state{registered = true}};
@@ -163,7 +164,6 @@ handle_info(register_in_ets, State = #state{id = SessionId, registered = false})
     end;
 
 handle_info({'DOWN', _Ref, process, CPid, _Reason}, State = #state{caller = CPid}) ->
-    error_logger:info_msg("Remove caller~n", []),
     {noreply, State#state{caller = undefined}};
 
 handle_info(_Info, State) ->
@@ -182,7 +182,6 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, _State = #state{id = SessionId}) ->
     ets:delete(?ETS, SessionId),
-    error_logger:info_msg("Socketio session ~p terminate~n", [SessionId]),
     ok.
 
 %%--------------------------------------------------------------------
@@ -199,3 +198,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+refresh_session_timeout(State = #state{session_timeout = Timeout, session_timeout_tref = TRef}) ->
+    erlang:cancel_timer(TRef),
+    NewTRef = erlang:send_after(Timeout, self(), session_timeout),
+    State#state{session_timeout_tref = NewTRef}.
