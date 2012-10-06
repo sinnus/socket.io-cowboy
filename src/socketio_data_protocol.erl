@@ -77,42 +77,42 @@ decode_frame(<<>>, Packets) ->
 decode_frame(<<?FRAME/utf8, Rest/binary>>, Packets) ->
     {Len, R1} =  decode_frame_len(Rest),
     {Msg, R2} = binary_utf8_split(R1, Len),
-    Packet = decode(Msg),
+    Packet = decode_packet(Msg),
     decode_frame(R2, [Packet|Packets]).
-
-test() ->
-    decode(<<?FRAME/utf8, "2", ?FRAME/utf8, "3:1::blabla", ?FRAME/utf8, "3", ?FRAME/utf8, "3:1::hi">>).
 
 %%% PARSING
 decode(<<?FRAME/utf8, Rest/binary>>) ->
     Frames = decode_frame(<<?FRAME/utf8, Rest/binary>>, []),
     lists:reverse(Frames);
 
-decode(<<"0">>) -> disconnect;
-decode(<<"0::", EndPoint/binary>>) -> {disconnect, EndPoint};
+decode(Binary) ->
+    [decode_packet(Binary)].
+
+decode_packet(<<"0">>) -> disconnect;
+decode_packet(<<"0::", EndPoint/binary>>) -> {disconnect, EndPoint};
 %% Incomplete, needs to handle queries
-decode(<<"1::", EndPoint/binary>>) -> {connect, EndPoint};
-decode(<<"2">>) -> heartbeat;
-decode(<<"3:", Rest/binary>>) ->
+decode_packet(<<"1::", EndPoint/binary>>) -> {connect, EndPoint};
+decode_packet(<<"2">>) -> heartbeat;
+decode_packet(<<"3:", Rest/binary>>) ->
     {Id, R1} = id(Rest),
     {EndPoint, Data} = endpoint(R1),
     {message, Id, EndPoint, Data};
-decode(<<"4:", Rest/binary>>) ->
+decode_packet(<<"4:", Rest/binary>>) ->
     {Id, R1} = id(Rest),
     {EndPoint, Data} = endpoint(R1),
     {json, Id, EndPoint, jsx:json_to_term(Data)};
-decode(<<"5:", Rest/binary>>) ->
+decode_packet(<<"5:", Rest/binary>>) ->
     {Id, R1} = id(Rest),
     {EndPoint, R2} = endpoint(R1),
     {Event, JSON} = event(R2),
     {event, Id, EndPoint, Event, jsx:json_to_term(JSON)};
-decode(<<"6:::", Rest/binary>>) ->
+decode_packet(<<"6:::", Rest/binary>>) ->
     case p_ack(Rest) of
         {Id, JSON} ->
             {ack, Id, jsx:json_to_term(JSON)};
         Id -> {ack, Id}
     end;
-decode(<<"7::", Rest/binary>>) ->
+decode_packet(<<"7::", Rest/binary>>) ->
     {EndPoint, R1} = endpoint(Rest),
     case reason(R1) of
         {Reason, Advice} ->
@@ -223,63 +223,63 @@ error_test_() ->
 
 %% DECODING TESTS
 d_disconnect_test_() ->
-    [?_assertEqual({disconnect, <<"/test">>}, decode(<<"0::/test">>)),
-     ?_assertEqual(disconnect, decode(<<"0">>))].
+    [?_assertEqual({disconnect, <<"/test">>}, decode_packet(<<"0::/test">>)),
+     ?_assertEqual(disconnect, decode_packet(<<"0">>))].
 
 d_connect_test_() ->
     [].
 
 %%% No format specified in the spec.
 d_heartbeat_test() ->
-    ?assertEqual(heartbeat, decode(heartbeat())).
+    ?assertEqual(heartbeat, decode_packet(heartbeat())).
 
 d_message_test_() ->
-    [?_assertEqual({message, 1, "", <<"blabla">>}, decode(iolist_to_binary(message(1, "", "blabla")))),
-     ?_assertEqual({message, 2, "", <<"bla">>}, decode(iolist_to_binary(message(2, "", "bla")))),
-     ?_assertEqual({message, "", "", <<"bla">>}, decode(iolist_to_binary(message("", "", "bla")))),
-     ?_assertEqual({message, "4+", "b", <<"bla">>}, decode(iolist_to_binary(message("4+", "b", "bla")))),
-     ?_assertEqual({message, "", "/test", <<"bla">>}, decode(iolist_to_binary(message("", "/test", "bla"))))].
+    [?_assertEqual({message, 1, "", <<"blabla">>}, decode_packet(iolist_to_binary(message(1, "", "blabla")))),
+     ?_assertEqual({message, 2, "", <<"bla">>}, decode_packet(iolist_to_binary(message(2, "", "bla")))),
+     ?_assertEqual({message, "", "", <<"bla">>}, decode_packet(iolist_to_binary(message("", "", "bla")))),
+     ?_assertEqual({message, "4+", "b", <<"bla">>}, decode_packet(iolist_to_binary(message("4+", "b", "bla")))),
+     ?_assertEqual({message, "", "/test", <<"bla">>}, decode_packet(iolist_to_binary(message("", "/test", "bla"))))].
 
 d_json_test_() ->
     [?_assertEqual({json, 1, "", [{<<"a">>,<<"b">>}]},
-            decode(iolist_to_binary(json(1, "", [{<<"a">>,<<"b">>}])))),
+            decode_packet(iolist_to_binary(json(1, "", [{<<"a">>,<<"b">>}])))),
         ?_assertEqual({json, 1, "/test", [{<<"a">>,<<"b">>}]},
-            decode(iolist_to_binary(json(1, "/test", [{<<"a">>,<<"b">>}])))),
+            decode_packet(iolist_to_binary(json(1, "/test", [{<<"a">>,<<"b">>}])))),
         ?_assertEqual({json, "1+", "/test", [{<<"a">>,<<"b">>}]},
-            decode(iolist_to_binary(json("1+", "/test", [{<<"a">>,<<"b">>}])))),
+            decode_packet(iolist_to_binary(json("1+", "/test", [{<<"a">>,<<"b">>}])))),
         ?_assertEqual({json, "", "/test", [{<<"a">>,<<"b">>}]},
-            decode(iolist_to_binary(json("", "/test", [{<<"a">>,<<"b">>}]))))].
+            decode_packet(iolist_to_binary(json("", "/test", [{<<"a">>,<<"b">>}]))))].
 
 d_event_test_() ->
     [
         ?_assertEqual({event, 1, "/test", <<"car">>, [{<<"a">>,<<"b">>}]},
-            decode(iolist_to_binary(event(1,"/test","car",[{<<"a">>,<<"b">>}])))),
+            decode_packet(iolist_to_binary(event(1,"/test","car",[{<<"a">>,<<"b">>}])))),
         ?_assertEqual({event, "", "", <<"car">>, [{<<"a">>,<<"b">>}]},
-            decode(iolist_to_binary(event("","",<<"car">>,[{<<"a">>,<<"b">>}])))),
+            decode_packet(iolist_to_binary(event("","",<<"car">>,[{<<"a">>,<<"b">>}])))),
         ?_assertEqual({event, "3+", "", <<"car">>, [{<<"a">>,<<"b">>}]},
-            decode(iolist_to_binary(event("3+","",<<"car">>,[{<<"a">>,<<"b">>}]))))
+            decode_packet(iolist_to_binary(event("3+","",<<"car">>,[{<<"a">>,<<"b">>}]))))
     ].
 
 d_ack_test_() ->
-    [?_assertEqual({ack, 4}, decode(iolist_to_binary(ack(4)))),
+    [?_assertEqual({ack, 4}, decode_packet(iolist_to_binary(ack(4)))),
     ?_assertEqual({ack, 4, [<<"A">>,<<"B">>]},
-                  decode(iolist_to_binary(ack(4,[<<"A">>,<<"B">>]))))].
+                  decode_packet(iolist_to_binary(ack(4,[<<"A">>,<<"B">>]))))].
 
 d_error_test_() ->
     %% No example, liberal interpretation
     [?_assertEqual({error, "end", <<"you">>, <<"die">>},
-            decode(iolist_to_binary(error("end","you","die")))),
-        ?_assertEqual({error, "", <<"you">>}, decode(iolist_to_binary(error("","you"))))].
+            decode_packet(iolist_to_binary(error("end","you","die")))),
+        ?_assertEqual({error, "", <<"you">>}, decode_packet(iolist_to_binary(error("","you"))))].
 
 
 %%% Guillermo has no idea whether we frame the length or the whole message.
 %%% The spec means nothing there?
-%decode(Data = [_|_]) ->
+%decode_packet(Data = [_|_]) ->
 %    {Length, Msg} = len(Data, undefined),
 %    {Packet, MoreData} = lists:split(Length, Msg),
 %    [parse(Packet) | case MoreData of
 %                        [] -> [];
-%                        _ -> decode(MoreData)
+%                        _ -> decode_packet(MoreData)
 %                    end].
 %
 %len([?FRAME, Num | Rest], undefined) when Num >= $0, Num =< $9 ->

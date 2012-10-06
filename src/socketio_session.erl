@@ -5,7 +5,7 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/3, init/0, configure/3, create/3, find/1, pull/2, poll/1, send/2, recv/2]).
+-export([start_link/3, init/0, configure/4, create/3, find/1, pull/2, poll/1, send/2, recv/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -24,10 +24,11 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-configure(Heartbeat, SessionTimeout, Callback) ->
+configure(Heartbeat, SessionTimeout, Callback, Protocol) ->
     #config{heartbeat = Heartbeat,
             session_timeout = SessionTimeout,
-            callback = Callback
+            callback = Callback,
+	    protocol = Protocol
            }.
 
 init() ->
@@ -119,12 +120,9 @@ handle_call({poll}, _From, State = #state{messages = Messages}) ->
     State1 = refresh_session_timeout(State),
     {reply, lists:reverse(Messages), State1#state{messages = []}};
 
-handle_call({recv, Messages}, _From, State = #state{id = SessionId, callback = Callback}) ->
-    lists:foldl(fun(Message, AccIn) ->
-			Callback:recv(self(), SessionId, Message),
-			AccIn
-		end, ok, Messages),
-    {reply, ok, State};
+handle_call({recv, Messages}, _From, State) ->
+    State1 = refresh_session_timeout(State),
+    process_messages(Messages, State1);
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -219,3 +217,17 @@ refresh_session_timeout(State = #state{session_timeout = Timeout, session_timeou
     erlang:cancel_timer(TRef),
     NewTRef = erlang:send_after(Timeout, self(), session_timeout),
     State#state{session_timeout_tref = NewTRef}.
+
+process_messages([], _State) ->
+    {reply, ok, _State};
+
+process_messages([Message|Rest], State = #state{id = SessionId, callback = Callback}) ->
+    case Message of
+	disconnect ->
+	    {stop, normal, ok, State};
+	heartbeat ->
+	    process_messages(Rest, State);
+	_ ->
+	    Callback:recv(self(), SessionId, Message),
+	    process_messages(Rest, State)
+    end.

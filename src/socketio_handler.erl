@@ -7,7 +7,7 @@
 
 init({tcp, http}, Req, [Config]) ->
     {PathInfo, _} = cowboy_req:path_info(Req),
-    Method = cowboy_req:method(Req),
+    {Method, _} = cowboy_req:method(Req),
     case PathInfo of
         [] ->
             {ok, Req, {create_session, Config}};
@@ -23,11 +23,15 @@ init({tcp, http}, Req, [Config]) ->
                             {ok, Req, {data, Messages, Config}}
                     end;
                 {{ok, Pid}, <<"POST">>} ->
-		    %% Decode message
-                    socketio_session:recv(Pid, [<<"MESSAGE">>]),
-                    {ok, Req, {ok, Config}};
+		    Protocol = Config#config.protocol,
+		    {ok, Body, Req1} = cowboy_req:body(Req),
+		    Messages = Protocol:decode(Body),
+                    socketio_session:recv(Pid, Messages),
+                    {ok, Req1, {ok, Config}};
                 {{error, not_found}, _} ->
-                    {ok, Req, {not_found, Sid, Config}}
+                    {ok, Req, {not_found, Sid, Config}};
+		_ ->
+		    {ok, Req, Config}
             end;
 	_ ->
 	    {ok, Req, Config}
