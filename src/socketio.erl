@@ -15,7 +15,7 @@ start() ->
 start(_Type, _Args) ->
     Dispatch = [
                 {'_', [
-                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure(3000,
+                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure(5000,
     		       											 30000,
     		       											 socketio,
     		       											 socketio_data_protocol)]},

@@ -18,7 +18,8 @@ init({tcp, http}, Req, [Config]) ->
                         session_in_use ->
                             {ok, Req, {session_in_use, Config}};
                         [] ->
-                            {loop, Req, {heartbeat, Config}, Config#config.heartbeat, hibernate};
+			    erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
+                            {loop, Req, {heartbeat, Config}, infinity};
                         Messages ->
                             {ok, Req, {data, Messages, Config}}
                     end;
@@ -74,6 +75,11 @@ handle(Req, {ok, Config}) ->
 handle(Req, Config) ->
     {ok, Req1} = cowboy_req:reply(404, [], <<>>, Req),
     {ok, Req1, Config}.
+
+info({timeout, _TRef, {?MODULE, Pid}}, Req, {heartbeat, Config}) ->
+    Messages = socketio_session:poll(Pid),
+    Req1 = reply_messages(Req, Messages, Config),
+    {ok, Req1, Config};
 
 info({message_arrived, Pid}, Req, {heartbeat, Config}) ->
     Messages = socketio_session:poll(Pid),

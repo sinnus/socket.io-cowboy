@@ -116,7 +116,6 @@ init([SessionId, SessionTimeout, Callback]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({pull, Pid}, _From,  State = #state{messages = Messages, caller = undefined}) ->
-    erlang:monitor(process, Pid),
     State1 = refresh_session_timeout(State),
     case Messages of
 	[] ->
@@ -130,7 +129,7 @@ handle_call({pull, _Pid}, _From,  State)  ->
 
 handle_call({poll}, _From, State = #state{messages = Messages}) ->
     State1 = refresh_session_timeout(State),
-    {reply, lists:reverse(Messages), State1#state{messages = []}};
+    {reply, lists:reverse(Messages), State1#state{messages = [], caller = undefined}};
 
 handle_call({recv, Messages}, _From, State) ->
     State1 = refresh_session_timeout(State),
@@ -183,10 +182,8 @@ handle_info(register_in_ets, State = #state{id = SessionId, registered = false, 
             {stop, session_id_exists, State}
     end;
 
-handle_info({'DOWN', _Ref, process, CPid, _Reason}, State = #state{caller = CPid}) ->
-    {noreply, State#state{caller = undefined}};
-
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    error_logger:info_msg("Info", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
