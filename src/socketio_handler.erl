@@ -42,13 +42,13 @@ handle(Req, {create_session, Config = #config{heartbeat = Heartbeat,
                                               callback = Callback}}) ->
     Sid = uuids:new(),
 
-    HeartbeatBin = list_to_binary(integer_to_list(Heartbeat)),
-    SessionTimeoutBin = list_to_binary(integer_to_list(SessionTimeout)),
+    HeartbeatBin = list_to_binary(integer_to_list(Heartbeat div 1000)),
+    SessionTimeoutBin = list_to_binary(integer_to_list(SessionTimeout div 1000)),
 
     _Pid = socketio_session:create(Sid, SessionTimeout, Callback),
 
     Result = <<":", HeartbeatBin/binary, ":", SessionTimeoutBin/binary, ":xhr-polling">>,
-    {ok, Req1} = cowboy_req:reply(200, [], <<Sid/binary, Result/binary>>, Req),
+    {ok, Req1} = cowboy_req:reply(200, json_headers(), <<Sid/binary, Result/binary>>, Req),
     {ok, Req1, Config};
 
 handle(Req, {data, Messages, Config}) ->
@@ -87,10 +87,7 @@ terminate(_Req, _State) ->
     ok.
 
 json_headers() ->
-    [{<<"Content-Type">>, <<"application/json">>},
-     {<<"Access-Control-Allow-Origin">>, <<"*">>},
-     {<<"Access-Control-Allow-Methods">>, <<"POST, GET, OPTIONS">>},
-     {<<"Access-Control-Allow-Headers">>, <<"Content-Type">>}].
+    [{<<"Content-Type">>, <<"application/json; charset=utf-8">>}].
 
 reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
     error_logger:info_msg("reply_messages ~p~n", [Messages]),

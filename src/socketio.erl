@@ -16,11 +16,19 @@ start(_Type, _Args) ->
     Dispatch = [
                 {'_', [
                        {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure(3000,
-													 30000,
-													 socketio,
-													 socketio_data_protocol)]}
+    		       											 30000,
+    		       											 socketio,
+    		       											 socketio_data_protocol)]},
+    		       {['...'], cowboy_static, [
+    						 {directory, {priv_dir, socketio, []}},
+						 {mimetypes, [
+							      {<<".html">>, [<<"text/html">>]},
+							      {<<".css">>, [<<"text/css">>]},
+							      {<<".js">>, [<<"application/javascript">>]}]}
+    						]}
                       ]}
                ],
+    
     cowboy:start_http(socketio_http_listener, 100, [{port, 8080}],
                       [{dispatch, Dispatch}]
                      ),
@@ -30,6 +38,8 @@ start(_Type, _Args) ->
 
 stop(_State) ->
     ok.
+
+%% API.
 
 %% ---- Handlers
 open(Pid, Sid) ->
@@ -44,3 +54,4 @@ recv(Pid, Sid, Message) ->
 close(Pid, Sid) ->
     error_logger:info_msg("close ~p ~p~n", [Pid, Sid]),
     ok.
+

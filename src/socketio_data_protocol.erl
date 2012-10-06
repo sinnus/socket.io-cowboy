@@ -6,6 +6,8 @@
 
 -define(FRAME, 16#fffd).
 
+encode([Message]) ->
+    encode(Message);
 encode(Messages) when is_list(Messages) ->
     lists:foldl(fun(Message, AccIn) ->
 			Packet = encode(Message),

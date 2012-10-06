@@ -118,7 +118,12 @@ init([SessionId, SessionTimeout, Callback]) ->
 handle_call({pull, Pid}, _From,  State = #state{messages = Messages, caller = undefined}) ->
     erlang:monitor(process, Pid),
     State1 = refresh_session_timeout(State),
-    {reply, lists:reverse(Messages), State1#state{caller = Pid, messages = []}};
+    case Messages of
+	[] ->
+	    {reply, [], State1#state{caller = Pid}};
+	_ ->
+	    {reply, lists:reverse(Messages), State1#state{messages = []}}
+    end;
 
 handle_call({pull, _Pid}, _From,  State)  ->
     {reply, session_in_use, State};
