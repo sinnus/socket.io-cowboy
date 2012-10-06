@@ -7,12 +7,13 @@
 
 init({tcp, http}, Req, [Config]) ->
     {PathInfo, _} = cowboy_req:path_info(Req),
+    Method = cowboy_req:method(Req),
     case PathInfo of
         [] ->
             {ok, Req, {create_session, Config}};
         [<<"xhr-polling">>, Sid] ->
-            case socketio_session:find(Sid) of
-                {ok, Pid} ->
+            case {socketio_session:find(Sid), Method} of
+                {{ok, Pid}, <<"GET">>} ->
                     case socketio_session:pull(Pid, self()) of
                         session_in_use ->
                             {ok, Req, {session_in_use, Config}};
@@ -21,15 +22,11 @@ init({tcp, http}, Req, [Config]) ->
                         Messages ->
                             {ok, Req, {data, Messages, Config}}
                     end;
-                {error, not_found} ->
-                    {ok, Req, {not_found, Sid, Config}}
-            end;
-        [<<"xhr-polling">>, Sid, <<"send">>] ->
-            case socketio_session:find(Sid) of
-                {ok, Pid} ->
+                {{ok, Pid}, <<"POST">>} ->
+		    %% Decode message
                     socketio_session:recv(Pid, [<<"MESSAGE">>]),
-                    {ok, Req, {send, Config}};
-                {error, not_found} ->
+                    {ok, Req, {ok, Config}};
+                {{error, not_found}, _} ->
                     {ok, Req, {not_found, Sid, Config}}
             end;
 	_ ->
@@ -64,6 +61,10 @@ handle(Req, {send, Config}) ->
 
 handle(Req, {session_in_use, Config}) ->
     {ok, Req1} = cowboy_req:reply(404, [], <<>>, Req),
+    {ok, Req1, Config};
+
+handle(Req, {ok, Config}) ->
+    {ok, Req1} = cowboy_req:reply(200, [], <<>>, Req),
     {ok, Req1, Config};
 
 handle(Req, Config) ->

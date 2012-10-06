@@ -55,7 +55,38 @@ error(EndPoint, Reason) ->
 error(EndPoint, Reason, Advice) ->
     [<<"7::">>, EndPoint, $:, Reason, $+, Advice].
 
+binary_utf8_split(Binary, Len) ->
+    binary_utf8_split(Binary, Len, <<>>).
+binary_utf8_split(<<Binary/binary>>, 0, AccIn) ->
+    {AccIn, Binary};
+binary_utf8_split(<<>>, _, AccIn) ->
+    {AccIn, <<>>};
+binary_utf8_split(<<X/utf8, Binary/binary>>, Len, AccIn) ->
+    binary_utf8_split(Binary, Len-1, <<AccIn/binary, X/utf8>>).
+
+decode_frame_len(X) ->
+    decode_frame_len(X, "").
+decode_frame_len(<<?FRAME/utf8, Rest/binary>>, Acc) ->
+    L = lists:reverse(Acc),
+    {list_to_integer(L), Rest};
+decode_frame_len(<<Num, Rest/binary>>, Acc) when Num-$0 >= 0, Num-$0 =< 9 ->
+    decode_frame_len(Rest, [Num|Acc]).
+
+decode_frame(<<>>, Packets) ->
+    Packets;
+decode_frame(<<?FRAME/utf8, Rest/binary>>, Packets) ->
+    {Len, R1} =  decode_frame_len(Rest),
+    {Msg, R2} = binary_utf8_split(R1, Len),
+    Packet = decode(Msg),
+    decode_frame(R2, [Packet|Packets]).
+
+test() ->
+    decode(<<?FRAME/utf8, "2", ?FRAME/utf8, "3:1::blabla", ?FRAME/utf8, "3", ?FRAME/utf8, "3:1::hi">>).
+
 %%% PARSING
+decode(<<?FRAME/utf8, Rest/binary>>) ->
+    Frames = decode_frame(<<?FRAME/utf8, Rest/binary>>, []),
+    lists:reverse(Frames);
 
 decode(<<"0">>) -> disconnect;
 decode(<<"0::", EndPoint/binary>>) -> {disconnect, EndPoint};
@@ -88,9 +119,7 @@ decode(<<"7::", Rest/binary>>) ->
             {error, EndPoint, Reason, Advice};
         Reason ->
             {error, EndPoint, Reason}
-    end;
-decode(_) ->
-    decode_error.
+    end.
 
 id(X) -> id(X, "").
 
@@ -259,3 +288,44 @@ d_error_test_() ->
 %    {Length, Rest};
 %len([Num | Rest], Length) when Num >= $0, Num =< $9 ->
 %    len(Rest, Num-$0 + Length * 10).
+
+binary_utf8_split1_test_() ->
+    A = <<"Привет">>,
+    {A1, A2} = binary_utf8_split(A, 2),
+    [?_assertEqual(A1, <<"Пр">>),
+     ?_assertEqual(A2, <<"ивет">>)].
+
+binary_utf8_split2_test_() ->
+    A = <<"Hello world">>,
+    {A1, A2} = binary_utf8_split(A, 5),
+    B = <<>>,
+    {B1, B2} = binary_utf8_split(B, 2),
+    C = <<"ZZZ">>,
+    {C1, C2} = binary_utf8_split(C, 200),
+    D = <<"Z">>,
+    {D1, D2} = binary_utf8_split(D, 1),
+    [
+     ?_assertEqual(<<"Hello">>, A1),
+     ?_assertEqual(<<" world">>, A2),
+     ?_assertEqual(<<>>, B1),
+     ?_assertEqual(<<>>, B2),
+     ?_assertEqual(<<"ZZZ">>, C1),
+     ?_assertEqual(<<>>, C2),
+     ?_assertEqual(<<"Z">>, D1),
+     ?_assertEqual(<<>>, D2)
+    ].
+
+id_test_() ->
+    [
+     ?_assertEqual({12, <<"rest">>}, id(<<"12:rest">>)),
+     ?_assertEqual({[], <<"rest">>}, id(<<":rest">>))
+    ].
+
+decode_frame_test_() ->
+    [
+     ?_assertEqual([{message, 1, [], <<"blabla">>}], decode(<<?FRAME/utf8, "12", ?FRAME/utf8, "3:1::blabla">>)),
+     ?_assertEqual([{json, 1, [], [{<<"a">>, <<"b">>}]},
+		    {message, 1, [], <<"blabla">>}],
+		   decode(<<?FRAME/utf8, "14", ?FRAME/utf8, "4:1::{\"a\":\"b\"}",
+			    ?FRAME/utf8, "12", ?FRAME/utf8, "3:1::blabla">>))
+    ].
