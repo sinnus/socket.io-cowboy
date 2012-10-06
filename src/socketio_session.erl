@@ -5,7 +5,8 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/3, init/0, configure/4, create/3, find/1, pull/2, poll/1, send/2, recv/2]).
+-export([start_link/3, init/0, configure/4, create/3, find/1, pull/2, poll/1, send/2, recv/2,
+	 send_message/2, send_obj/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -55,6 +56,12 @@ poll(Pid) ->
 
 send(Pid, Message) ->
     gen_server:cast(Pid, {send, Message}).
+
+send_message(Pid, Message) when is_binary(Message) ->
+    gen_server:cast(Pid, {send, {message, <<>>, <<>>, Message}}).
+
+send_obj(Pid, Obj) -> 
+    gen_server:cast(Pid, {send, {json, <<>>, <<>>, Obj}}).
 
 recv(Pid, Messages) when is_list(Messages) ->
     gen_server:call(Pid, {recv, Messages}, infinity).

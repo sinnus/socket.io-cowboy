@@ -34,6 +34,7 @@ stop(_State) ->
 %% ---- Handlers
 open(Pid, Sid) ->
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
+    socketio_session:send_message(Pid, <<"My message!!!">>),
     ok.
 
 recv(Pid, Sid, Message) ->

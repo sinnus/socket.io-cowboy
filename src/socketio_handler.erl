@@ -52,8 +52,8 @@ handle(Req, {create_session, Config = #config{heartbeat = Heartbeat,
     {ok, Req1, Config};
 
 handle(Req, {data, Messages, Config}) ->
-    error_logger:info_msg("Messages ~p~n", [Messages]),
-    {ok, Req, Config};
+    Req1 = reply_messages(Req, Messages, Config),
+    {ok, Req1, Config};
 
 handle(Req, {not_found, _Sid, Config}) ->
     {ok, Req1} = cowboy_req:reply(404, [], <<>>, Req),
@@ -77,11 +77,23 @@ handle(Req, Config) ->
 
 info({message_arrived, Pid}, Req, {heartbeat, Config}) ->
     Messages = socketio_session:poll(Pid),
-    error_logger:info_msg("Messages arrived ~p~n", [Messages]),
-    {ok, Req, Config};
+    Req1 = reply_messages(Req, Messages, Config),
+    {ok, Req1, Config};
 
 info(_Info, Req, State) ->
     {ok, Req, State}.
 
 terminate(_Req, _State) ->
     ok.
+
+json_headers() ->
+    [{<<"Content-Type">>, <<"application/json">>},
+     {<<"Access-Control-Allow-Origin">>, <<"*">>},
+     {<<"Access-Control-Allow-Methods">>, <<"POST, GET, OPTIONS">>},
+     {<<"Access-Control-Allow-Headers">>, <<"Content-Type">>}].
+
+reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
+    error_logger:info_msg("reply_messages ~p~n", [Messages]),
+    Packet = Protocol:encode(Messages),
+    {ok, Req1} = cowboy_req:reply(200, json_headers(), Packet, Req),
+    Req1.

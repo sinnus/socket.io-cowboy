@@ -6,6 +6,17 @@
 
 -define(FRAME, 16#fffd).
 
+encode(Messages) when is_list(Messages) ->
+    lists:foldl(fun(Message, AccIn) ->
+			Packet = encode(Message),
+			LenBin = binary:list_to_bin(integer_to_list(binary_utf8_len(Packet))),
+			<<AccIn/binary, ?FRAME/utf8, LenBin/binary, ?FRAME/utf8, Packet/binary>>
+		end, <<>>, Messages);
+encode({message, Id, EndPoint, Message}) ->
+    message(Id, EndPoint, Message);
+encode({json, Id, EndPoint, Message}) ->
+    json(Id, EndPoint, Message).
+
 disconnect(<<>>) ->
     <<"0">>;
 disconnect(Endpoint) ->
@@ -32,6 +43,13 @@ error(EndPoint, Reason) ->
     [<<"7::">>, EndPoint, $:, Reason].
 error(EndPoint, Reason, Advice) ->
     [<<"7::">>, EndPoint, $:, Reason, $+, Advice].
+
+binary_utf8_len(Binary) ->
+    binary_utf8_len(Binary, 0).
+binary_utf8_len(<<>>, Len) ->
+    Len;
+binary_utf8_len(<<_X/utf8, Binary/binary>>, Len) ->
+    binary_utf8_len(Binary, Len+1).
 
 binary_utf8_split(Binary, Len) ->
     binary_utf8_split(Binary, Len, <<>>).
@@ -219,4 +237,14 @@ decode_frame_test_() ->
 		    {message, 1, <<>>, <<"blabla">>}],
 		   decode(<<?FRAME/utf8, "14", ?FRAME/utf8, "4:1::{\"a\":\"b\"}",
 			    ?FRAME/utf8, "12", ?FRAME/utf8, "3:1::blabla">>))
+    ].
+
+encode_frame_test_() ->
+    [
+     ?_assertEqual(<<?FRAME/utf8, "10", ?FRAME/utf8, "3:::Привет">>,
+		   encode([{message, <<>>, <<>>, <<"Привет">>}])),
+     ?_assertEqual(<<?FRAME/utf8, "10", ?FRAME/utf8, "3:::Привет",
+		     ?FRAME/utf8, "8", ?FRAME/utf8, "4:::\"ZX\"">>,
+		   encode([{message, <<>>, <<>>, <<"Привет">>},
+			   {json, <<>>, <<>>, <<"ZX">>}]))
     ].
