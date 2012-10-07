@@ -5,12 +5,12 @@
 -export([open/2, recv/3, close/2]).
 
 start() ->
-    application:start(crypto),
-    application:start(public_key),
-    application:start(ssl),
-    application:start(ranch),
-    application:start(cowboy),
-    application:start(socketio).
+    ok = application:start(crypto),
+    ok = application:start(public_key),
+    ok = application:start(ssl),
+    ok = application:start(ranch),
+    ok = application:start(cowboy),
+    ok = application:start(socketio).
 
 start(_Type, _Args) ->
     Dispatch = [
@@ -28,7 +28,7 @@ start(_Type, _Args) ->
     						]}
                       ]}
                ],
-    
+
     cowboy:start_http(socketio_http_listener, 100, [{port, 8080}],
                       [{dispatch, Dispatch}]
                      ),
@@ -58,4 +58,3 @@ recv(Pid, Sid, Message) ->
 close(Pid, Sid) ->
     error_logger:info_msg("close ~p ~p~n", [Pid, Sid]),
     ok.
-

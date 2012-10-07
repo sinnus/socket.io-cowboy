@@ -1,5 +1,4 @@
 -module(socketio_handler).
--behaviour(cowboy_http_handler).
 
 -include("socketio_internal.hrl").
 
