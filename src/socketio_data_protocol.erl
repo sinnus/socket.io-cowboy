@@ -17,7 +17,14 @@ encode(Messages) when is_list(Messages) ->
 encode({message, Id, EndPoint, Message}) ->
     message(Id, EndPoint, Message);
 encode({json, Id, EndPoint, Message}) ->
-    json(Id, EndPoint, Message).
+    json(Id, EndPoint, Message);
+encode({connect, Endpoint}) ->
+    (connect(Endpoint)).
+
+connect(<<>>) ->
+    <<"1::">>;
+connect(Endpoint) ->
+    <<"1::", Endpoint/binary>>.
 
 disconnect(<<>>) ->
     <<"0">>;

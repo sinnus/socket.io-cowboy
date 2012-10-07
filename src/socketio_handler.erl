@@ -49,7 +49,7 @@ handle(Req, {create_session, Config = #config{heartbeat = Heartbeat,
     _Pid = socketio_session:create(Sid, SessionTimeout, Callback),
 
     Result = <<":", HeartbeatBin/binary, ":", SessionTimeoutBin/binary, ":xhr-polling">>,
-    {ok, Req1} = cowboy_req:reply(200, json_headers(), <<Sid/binary, Result/binary>>, Req),
+    {ok, Req1} = cowboy_req:reply(200, text_headers(), <<Sid/binary, Result/binary>>, Req),
     {ok, Req1, Config};
 
 handle(Req, {data, Messages, Config}) ->
@@ -69,7 +69,7 @@ handle(Req, {session_in_use, Config}) ->
     {ok, Req1, Config};
 
 handle(Req, {ok, Config}) ->
-    {ok, Req1} = cowboy_req:reply(200, [], <<>>, Req),
+    {ok, Req1} = cowboy_req:reply(200, text_headers(), <<>>, Req),
     {ok, Req1, Config};
 
 handle(Req, Config) ->
@@ -92,11 +92,14 @@ info(_Info, Req, State) ->
 terminate(_Req, _State) ->
     ok.
 
-json_headers() ->
-    [{<<"Content-Type">>, <<"application/json; charset=utf-8">>}].
+text_headers() ->
+    [{<<"Content-Type">>, <<"text/plain; charset=UTF-8">>},
+     {<<"Access-Control-Allow-Credentials">>, <<"true">>},
+     {<<"Access-Control-Allow-Origin">>, <<"null">>}].
 
 reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
     error_logger:info_msg("reply_messages ~p~n", [Messages]),
     Packet = Protocol:encode(Messages),
-    {ok, Req1} = cowboy_req:reply(200, json_headers(), Packet, Req),
+    error_logger:info_msg("packet ~p~n", [Packet]),
+    {ok, Req1} = cowboy_req:reply(200, text_headers(), Packet, Req),
     Req1.

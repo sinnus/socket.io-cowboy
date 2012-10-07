@@ -44,8 +44,12 @@ stop(_State) ->
 %% ---- Handlers
 open(Pid, Sid) ->
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
-    socketio_session:send_message(Pid, <<"My message!!!">>),
     ok.
+
+recv(Pid, _Sid, {json, _, <<>>, Json}) ->
+    error_logger:info_msg("recv json ~p~n", [Json]),
+    socketio_session:send_obj(Pid, Json),
+    ok;
 
 recv(Pid, Sid, Message) ->
     error_logger:info_msg("recv ~p ~p ~p~n", [Pid, Sid, Message]),

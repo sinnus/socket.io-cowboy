@@ -177,6 +177,7 @@ handle_info(register_in_ets, State = #state{id = SessionId, registered = false, 
     case ets:insert_new(?ETS, {SessionId, self()}) of
         true ->
 	    Callback:open(self(), SessionId),
+	    send(self(), {connect, <<>>}),
             {noreply, State#state{registered = true}};
         false ->
             {stop, session_id_exists, State}
