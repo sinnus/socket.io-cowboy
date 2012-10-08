@@ -102,9 +102,7 @@ text_headers() ->
      {<<"Access-Control-Allow-Origin">>, <<"null">>}].
 
 reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
-    error_logger:info_msg("reply_messages ~p~n", [Messages]),
     Packet = Protocol:encode(Messages),
-    error_logger:info_msg("packet ~p~n", [Packet]),
     {ok, Req1} = cowboy_req:reply(200, text_headers(), Packet, Req),
     Req1.
 
@@ -114,6 +112,7 @@ websocket_init(_TransportName, Req, [Config]) ->
     [<<"websocket">>, Sid] = PathInfo,
     case socketio_session:find(Sid) of
         {ok, Pid} ->
+	    erlang:monitor(process, Pid),
             self() ! go,
             erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
             {ok, Req, {Config, Pid}};
@@ -122,7 +121,6 @@ websocket_init(_TransportName, Req, [Config]) ->
     end.
 
 websocket_handle({text, Data}, Req, {Config = #config{protocol = Protocol}, Pid}) ->
-    error_logger:info_msg("Received from client: ~p~n", [Data]),
     Messages = Protocol:decode(Data),
     socketio_session:recv(Pid, Messages),
     {ok, Req, {Config, Pid}};
@@ -130,16 +128,13 @@ websocket_handle(_Data, Req, State) ->
     {ok, Req, State}.
 
 websocket_info(go, Req, {Config, Pid}) ->
-    error_logger:info_msg("go~n", []),
     case socketio_session:pull(Pid, self()) of
         session_in_use ->
-            error_logger:info_msg("Session in use~n", []),
             {shutdown, Req, {Config, Pid}};
         Messages ->
             reply_ws_messages(Req, Messages, {Config, Pid})
     end;
 websocket_info({message_arrived, Pid}, Req, {Config, Pid}) ->
-    error_logger:info_msg("message_arrived~n", []),
     Messages =  socketio_session:poll(Pid),
     self() ! go,
     reply_ws_messages(Req, Messages, {Config, Pid});
@@ -147,14 +142,14 @@ websocket_info({timeout, _TRef, {?MODULE, Pid}}, Req, {Config = #config{protocol
     socketio_session:refresh(Pid),
     erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
     Packet = Protocol:encode(heartbeat),
-    error_logger:info_msg("Heartbeat to client ~p~n", [Packet]),
     {reply, {text, Packet}, Req, {Config, Pid}};
+websocket_info({'DOWN', _Ref, process, Pid, _Reason}, Req, State = {_Config, Pid}) ->
+    {shutdown, Req, State};
 websocket_info(_Info, Req, State) ->
     {ok, Req, State}.
 
 websocket_terminate(_Reason, _Req, _State = {_Config, Pid}) ->
     socketio_session:disconnect(Pid),
-    error_logger:info_msg("websocket_terminate"),
     ok.
 
 reply_ws_messages(Req, Messages, State = {_Config = #config{protocol = Protocol}, _Pid}) ->
@@ -162,6 +157,5 @@ reply_ws_messages(Req, Messages, State = {_Config = #config{protocol = Protocol}
         <<>> ->
             {ok, Req, State};
         Packet ->
-            error_logger:info_msg("Send to client ~p~n", [Packet]),
             {reply, {text, Packet}, Req, State}
     end.

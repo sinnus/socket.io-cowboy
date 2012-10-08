@@ -98,7 +98,6 @@ start_link(SessionId, SessionTimeout, Callback) ->
 %% @end
 %%--------------------------------------------------------------------
 init([SessionId, SessionTimeout, Callback]) ->
-    process_flag(trap_exit, true),
     self() ! register_in_ets,
     TRef = erlang:send_after(SessionTimeout, self(), session_timeout),
     {ok, #state{id = SessionId,
