@@ -5,8 +5,8 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/3, init/0, configure/4, create/3, find/1, pull/2, poll/1, send/2, recv/2,
-	 send_message/2, send_obj/2]).
+-export([start_link/3, init/0, configure/5, create/3, find/1, pull/2, poll/1, send/2, recv/2,
+         send_message/2, send_obj/2, refresh/1, disconnect/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -25,11 +25,12 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-configure(Heartbeat, SessionTimeout, Callback, Protocol) ->
+configure(Heartbeat, HeartbeatTimeout, SessionTimeout, Callback, Protocol) ->
     #config{heartbeat = Heartbeat,
+            heartbeat_timeout = HeartbeatTimeout,
             session_timeout = SessionTimeout,
             callback = Callback,
-	    protocol = Protocol
+            protocol = Protocol
            }.
 
 init() ->
@@ -60,11 +61,17 @@ send(Pid, Message) ->
 send_message(Pid, Message) when is_binary(Message) ->
     gen_server:cast(Pid, {send, {message, <<>>, <<>>, Message}}).
 
-send_obj(Pid, Obj) -> 
+send_obj(Pid, Obj) ->
     gen_server:cast(Pid, {send, {json, <<>>, <<>>, Obj}}).
 
 recv(Pid, Messages) when is_list(Messages) ->
     gen_server:call(Pid, {recv, Messages}, infinity).
+
+refresh(Pid) ->
+    gen_server:cast(Pid, {refresh}).
+
+disconnect(Pid) ->
+    gen_server:cast(Pid, {disconnect}).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -118,13 +125,13 @@ init([SessionId, SessionTimeout, Callback]) ->
 handle_call({pull, Pid}, _From,  State = #state{messages = Messages, caller = undefined}) ->
     State1 = refresh_session_timeout(State),
     case Messages of
-	[] ->
-	    {reply, [], State1#state{caller = Pid}};
-	_ ->
-	    {reply, lists:reverse(Messages), State1#state{messages = []}}
+        [] ->
+            {reply, [], State1#state{caller = Pid}};
+        _ ->
+            {reply, lists:reverse(Messages), State1#state{messages = [], caller = Pid}}
     end;
 
-handle_call({pull, _Pid}, _From,  State)  ->
+handle_call({pull, _Pid}, _From,  State) ->
     {reply, session_in_use, State};
 
 handle_call({poll}, _From, State = #state{messages = Messages}) ->
@@ -157,9 +164,14 @@ handle_cast({send, Message}, State = #state{messages = Messages, caller = Caller
     end,
     {noreply, State#state{messages = [Message|Messages]}};
 
+handle_cast({refresh}, State) ->
+    {noreply, refresh_session_timeout(State)};
+
+handle_cast({disconnect}, State) ->
+    {stop, normal, State};
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
-
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -176,17 +188,15 @@ handle_info(session_timeout, State) ->
 handle_info(register_in_ets, State = #state{id = SessionId, registered = false, callback = Callback}) ->
     case ets:insert_new(?ETS, {SessionId, self()}) of
         true ->
-	    Callback:open(self(), SessionId),
-	    send(self(), {connect, <<>>}),
+            Callback:open(self(), SessionId),
+            send(self(), {connect, <<>>}),
             {noreply, State#state{registered = true}};
         false ->
             {stop, session_id_exists, State}
     end;
 
-handle_info(Info, State) ->
-    error_logger:info_msg("Info", [Info]),
+handle_info(_Info, State) ->
     {noreply, State}.
-
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -201,11 +211,11 @@ handle_info(Info, State) ->
 terminate(_Reason, _State = #state{id = SessionId, registered = Registered, callback = Callback}) ->
     ets:delete(?ETS, SessionId),
     case Registered of
-	true ->
-	    Callback:close(self(), SessionId),
-	    ok;
-	_ ->
-	    ok
+        true ->
+            Callback:close(self(), SessionId),
+            ok;
+        _ ->
+            ok
     end,
     ok.
 
@@ -233,11 +243,15 @@ process_messages([], _State) ->
 
 process_messages([Message|Rest], State = #state{id = SessionId, callback = Callback}) ->
     case Message of
-	disconnect ->
-	    {stop, normal, ok, State};
-	heartbeat ->
-	    process_messages(Rest, State);
-	_ ->
-	    Callback:recv(self(), SessionId, Message),
-	    process_messages(Rest, State)
+        {disconnect, _EndPoint} ->
+            {stop, normal, ok, State};
+        {connect, _EndPoint} ->
+            process_messages(Rest, State);
+        disconnect ->
+            {stop, normal, ok, State};
+        heartbeat ->
+            process_messages(Rest, State);
+        _ ->
+            Callback:recv(self(), SessionId, Message),
+            process_messages(Rest, State)
     end.

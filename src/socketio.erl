@@ -16,16 +16,17 @@ start(_Type, _Args) ->
     Dispatch = [
                 {'_', [
                        {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure(5000,
-    		       											 30000,
-    		       											 socketio,
-    		       											 socketio_data_protocol)]},
-    		       {['...'], cowboy_static, [
-    						 {directory, {priv_dir, socketio, []}},
-						 {mimetypes, [
-							      {<<".html">>, [<<"text/html">>]},
-							      {<<".css">>, [<<"text/css">>]},
-							      {<<".js">>, [<<"application/javascript">>]}]}
-    						]}
+                                                                                                         30000,
+                                                                                                         30000,
+                                                                                                         socketio,
+                                                                                                         socketio_data_protocol)]},
+                       {['...'], cowboy_static, [
+                                                 {directory, {priv_dir, socketio, []}},
+                                                 {mimetypes, [
+                                                              {<<".html">>, [<<"text/html">>]},
+                                                              {<<".css">>, [<<"text/css">>]},
+                                                              {<<".js">>, [<<"application/javascript">>]}]}
+                                                ]}
                       ]}
                ],
 

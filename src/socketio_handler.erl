@@ -2,7 +2,9 @@
 
 -include("socketio_internal.hrl").
 
--export([init/3, handle/2, info/3, terminate/2]).
+-export([init/3, handle/2, info/3, terminate/2,
+         websocket_init/3, websocket_handle/3,
+         websocket_info/3, websocket_terminate/3]).
 
 init({tcp, http}, Req, [Config]) ->
     {PathInfo, _} = cowboy_req:path_info(Req),
@@ -17,37 +19,40 @@ init({tcp, http}, Req, [Config]) ->
                         session_in_use ->
                             {ok, Req, {session_in_use, Config}};
                         [] ->
-			    erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
+                            erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
                             {loop, Req, {heartbeat, Config}, infinity};
                         Messages ->
                             {ok, Req, {data, Messages, Config}}
                     end;
                 {{ok, Pid}, <<"POST">>} ->
-		    Protocol = Config#config.protocol,
-		    {ok, Body, Req1} = cowboy_req:body(Req),
-		    Messages = Protocol:decode(Body),
+                    Protocol = Config#config.protocol,
+                    {ok, Body, Req1} = cowboy_req:body(Req),
+                    Messages = Protocol:decode(Body),
                     socketio_session:recv(Pid, Messages),
                     {ok, Req1, {ok, Config}};
                 {{error, not_found}, _} ->
                     {ok, Req, {not_found, Sid, Config}};
-		_ ->
-		    {ok, Req, Config}
+                _ ->
+                    {ok, Req, Config}
             end;
-	_ ->
-	    {ok, Req, Config}
+        [<<"websocket">>, _Sid] ->
+            {upgrade, protocol, cowboy_websocket};
+        _ ->
+            {ok, Req, Config}
     end.
 
-handle(Req, {create_session, Config = #config{heartbeat = Heartbeat,
+%% Http handlers
+handle(Req, {create_session, Config = #config{heartbeat_timeout = HeartbeatTimeout,
                                               session_timeout = SessionTimeout,
                                               callback = Callback}}) ->
     Sid = uuids:new(),
 
-    HeartbeatBin = list_to_binary(integer_to_list(Heartbeat div 1000)),
+    HeartbeatTimeoutBin = list_to_binary(integer_to_list(HeartbeatTimeout div 1000)),
     SessionTimeoutBin = list_to_binary(integer_to_list(SessionTimeout div 1000)),
 
     _Pid = socketio_session:create(Sid, SessionTimeout, Callback),
 
-    Result = <<":", HeartbeatBin/binary, ":", SessionTimeoutBin/binary, ":xhr-polling">>,
+    Result = <<":", HeartbeatTimeoutBin/binary, ":", SessionTimeoutBin/binary, ":xhr-polling,websocket">>,
     {ok, Req1} = cowboy_req:reply(200, text_headers(), <<Sid/binary, Result/binary>>, Req),
     {ok, Req1, Config};
 
@@ -102,3 +107,61 @@ reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
     error_logger:info_msg("packet ~p~n", [Packet]),
     {ok, Req1} = cowboy_req:reply(200, text_headers(), Packet, Req),
     Req1.
+
+%% Websocket handlers
+websocket_init(_TransportName, Req, [Config]) ->
+    {PathInfo, _} = cowboy_req:path_info(Req),
+    [<<"websocket">>, Sid] = PathInfo,
+    case socketio_session:find(Sid) of
+        {ok, Pid} ->
+            self() ! go,
+            erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
+            {ok, Req, {Config, Pid}};
+        {error, not_found} ->
+            {shutdown, Req, {Config, undefined}}
+    end.
+
+websocket_handle({text, Data}, Req, {Config = #config{protocol = Protocol}, Pid}) ->
+    error_logger:info_msg("Received from client: ~p~n", [Data]),
+    Messages = Protocol:decode(Data),
+    socketio_session:recv(Pid, Messages),
+    {ok, Req, {Config, Pid}};
+websocket_handle(_Data, Req, State) ->
+    {ok, Req, State}.
+
+websocket_info(go, Req, {Config, Pid}) ->
+    error_logger:info_msg("go~n", []),
+    case socketio_session:pull(Pid, self()) of
+        session_in_use ->
+            error_logger:info_msg("Session in use~n", []),
+            {shutdown, Req, {Config, Pid}};
+        Messages ->
+            reply_ws_messages(Req, Messages, {Config, Pid})
+    end;
+websocket_info({message_arrived, Pid}, Req, {Config, Pid}) ->
+    error_logger:info_msg("message_arrived~n", []),
+    Messages =  socketio_session:poll(Pid),
+    self() ! go,
+    reply_ws_messages(Req, Messages, {Config, Pid});
+websocket_info({timeout, _TRef, {?MODULE, Pid}}, Req, {Config = #config{protocol = Protocol}, Pid}) ->
+    socketio_session:refresh(Pid),
+    erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
+    Packet = Protocol:encode(heartbeat),
+    error_logger:info_msg("Heartbeat to client ~p~n", [Packet]),
+    {reply, {text, Packet}, Req, {Config, Pid}};
+websocket_info(_Info, Req, State) ->
+    {ok, Req, State}.
+
+websocket_terminate(_Reason, _Req, _State = {_Config, Pid}) ->
+    socketio_session:disconnect(Pid),
+    error_logger:info_msg("websocket_terminate"),
+    ok.
+
+reply_ws_messages(Req, Messages, State = {_Config = #config{protocol = Protocol}, _Pid}) ->
+    case Protocol:encode(Messages) of
+        <<>> ->
+            {ok, Req, State};
+        Packet ->
+            error_logger:info_msg("Send to client ~p~n", [Packet]),
+            {reply, {text, Packet}, Req, State}
+    end.

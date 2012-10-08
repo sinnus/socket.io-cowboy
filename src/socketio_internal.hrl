@@ -1,5 +1,6 @@
 -record(config, {heartbeat,
-		 session_timeout,
-		 callback,
-		 protocol
-		}).
+                 heartbeat_timeout,
+                 session_timeout,
+                 callback,
+                 protocol
+                }).

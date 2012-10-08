@@ -19,7 +19,9 @@ encode({message, Id, EndPoint, Message}) ->
 encode({json, Id, EndPoint, Message}) ->
     json(Id, EndPoint, Message);
 encode({connect, Endpoint}) ->
-    (connect(Endpoint)).
+    connect(Endpoint);
+encode(heartbeat) ->
+    heartbeat().
 
 connect(<<>>) ->
     <<"1::">>;
@@ -27,12 +29,12 @@ connect(Endpoint) ->
     <<"1::", Endpoint/binary>>.
 
 disconnect(<<>>) ->
-    <<"0">>;
+    <<"0::">>;
 disconnect(Endpoint) ->
     <<"0::", Endpoint/binary>>.
 
 heartbeat() ->
-    <<"2">>.
+    <<"2::">>.
 
 message(Id, EndPoint, Msg) when is_integer(Id) ->
     IdBin = binary:list_to_bin(integer_to_list(Id)),
@@ -97,7 +99,7 @@ decode_packet(<<"0">>) -> disconnect;
 decode_packet(<<"0::", EndPoint/binary>>) -> {disconnect, EndPoint};
 %% Incomplete, needs to handle queries
 decode_packet(<<"1::", EndPoint/binary>>) -> {connect, EndPoint};
-decode_packet(<<"2">>) -> heartbeat;
+decode_packet(<<"2::">>) -> heartbeat;
 decode_packet(<<"3:", Rest/binary>>) ->
     {Id, R1} = id(Rest),
     {EndPoint, Data} = endpoint(R1),
@@ -140,13 +142,13 @@ reason(X) ->
 %%% ENCODING
 disconnect_test_() ->
     [?_assertEqual(<<"0::/test">>, disconnect(<<"/test">>)),
-     ?_assertEqual(<<"0">>, disconnect(<<>>))].
+     ?_assertEqual(<<"0::">>, disconnect(<<>>))].
 
 connect_test_() -> []. % Only need to read, never to encode
 
 %% No format specified in the spec.
 heartbeat_test() ->
-    ?assertEqual(<<"2">>, heartbeat()).
+    ?assertEqual(<<"2::">>, heartbeat()).
 
 message_test_() ->
     [?_assertEqual(<<"3:1::blabla">>, message(1, <<"">>, <<"blabla">>)),
@@ -250,8 +252,7 @@ decode_frame_test_() ->
 
 encode_frame_test_() ->
     [
-     ?_assertEqual(<<?FRAME/utf8, "10", ?FRAME/utf8, "3:::Привет">>,
-		   encode([{message, <<>>, <<>>, <<"Привет">>}])),
+     ?_assertEqual(<<"3:::Привет">>, encode([{message, <<>>, <<>>, <<"Привет">>}])),
      ?_assertEqual(<<?FRAME/utf8, "10", ?FRAME/utf8, "3:::Привет",
 		     ?FRAME/utf8, "8", ?FRAME/utf8, "4:::\"ZX\"">>,
 		   encode([{message, <<>>, <<>>, <<"Привет">>},
