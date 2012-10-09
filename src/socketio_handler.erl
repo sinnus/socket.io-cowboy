@@ -57,7 +57,7 @@ handle(Req, {create_session, Config = #config{heartbeat_timeout = HeartbeatTimeo
     {ok, Req1, Config};
 
 handle(Req, {data, Messages, Config}) ->
-    Req1 = reply_messages(Req, Messages, Config),
+    {ok, Req1} = reply_messages(Req, Messages, Config),
     {ok, Req1, Config};
 
 handle(Req, {not_found, _Sid, Config}) ->
@@ -81,32 +81,35 @@ handle(Req, Config) ->
     {ok, Req1, Config}.
 
 info({timeout, _TRef, {?MODULE, Pid}}, Req, {heartbeat, Config}) ->
-    Messages = socketio_session:poll(Pid),
-    Req1 = reply_messages(Req, Messages, Config),
-    {ok, Req1, Config};
+    safe_poll(Req, Config, Pid);
 
 info({message_arrived, Pid}, Req, {heartbeat, Config}) ->
-    Messages = socketio_session:poll(Pid),
-    Req1 = reply_messages(Req, Messages, Config),
-    {ok, Req1, Config};
+    safe_poll(Req, Config, Pid);
 
 info(_Info, Req, State) ->
     {ok, Req, State}.
 
 terminate(_Req, _State) ->
-
-
-    ok.
+   ok.
 
 text_headers() ->
-    [{<<"Content-Type">>, <<"text/plain; charset=UTF-8">>},
+    [{<<"content-Type">>, <<"text/plain; charset=utf-8">>},
      {<<"Access-Control-Allow-Credentials">>, <<"true">>},
      {<<"Access-Control-Allow-Origin">>, <<"null">>}].
 
 reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
     Packet = Protocol:encode(Messages),
-    {ok, Req1} = cowboy_req:reply(200, text_headers(), Packet, Req),
-    Req1.
+    cowboy_req:reply(200, text_headers(), Packet, Req).
+
+safe_poll(Req, Config = #config{protocol = Protocol}, Pid) ->
+    {ok, Req1} = try
+                     Messages = socketio_session:poll(Pid),
+                     reply_messages(Req, Messages, Config)
+                 catch
+                     exit:{noproc, _} ->
+                         cowboy_req:reply(200, text_headers(), Protocol:encode(disconnect), Req)
+                 end,
+    {ok, Req1, Config}.
 
 %% Websocket handlers
 websocket_init(_TransportName, Req, [Config]) ->

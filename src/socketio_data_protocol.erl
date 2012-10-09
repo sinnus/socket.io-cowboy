@@ -21,7 +21,9 @@ encode({json, Id, EndPoint, Message}) ->
 encode({connect, Endpoint}) ->
     connect(Endpoint);
 encode(heartbeat) ->
-    heartbeat().
+    heartbeat();
+encode(disconnect) ->
+    disconnect(<<>>).
 
 connect(<<>>) ->
     <<"1::">>;
