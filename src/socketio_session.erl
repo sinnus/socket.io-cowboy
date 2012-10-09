@@ -5,7 +5,7 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/3, init/0, configure/5, create/3, find/1, pull/2, pull_no_wait/2, poll/1, send/2, recv/2,
+-export([start_link/3, init/0, configure/1, create/3, find/1, pull/2, pull_no_wait/2, poll/1, send/2, recv/2,
          send_message/2, send_obj/2, refresh/1, disconnect/1]).
 
 %% gen_server callbacks
@@ -25,12 +25,12 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
-configure(Heartbeat, HeartbeatTimeout, SessionTimeout, Callback, Protocol) ->
-    #config{heartbeat = Heartbeat,
-            heartbeat_timeout = HeartbeatTimeout,
-            session_timeout = SessionTimeout,
-            callback = Callback,
-            protocol = Protocol
+configure(Opts) ->
+    #config{heartbeat = proplists:get_value(heartbeat, Opts, 5000),
+            heartbeat_timeout = proplists:get_value(heartbeat_timeout, Opts, 30000),
+            session_timeout = proplists:get_value(session_timeout, Opts, 30000),
+            callback = proplists:get_value(callback, Opts),
+            protocol = proplists:get_value(protocol, Opts, socketio_data_protocol)
            }.
 
 init() ->

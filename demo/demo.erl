@@ -13,11 +13,11 @@ start() ->
 
     Dispatch = [
                 {'_', [
-                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure(5000,
-                                                                                                         30000,
-                                                                                                         30000,
-                                                                                                         ?MODULE,
-                                                                                                         socketio_data_protocol)]},
+                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure([{heartbeat, 5000},
+                                                                                                          {heartbeat_timeout, 30000},
+                                                                                                          {session_timeout, 30000},
+                                                                                                          {callback, ?MODULE},
+                                                                                                          {protocol, socketio_data_protocol}])]},
                        {['...'], cowboy_static, [
                                                  {directory, <<"./priv">>},
                                                  {mimetypes, [
