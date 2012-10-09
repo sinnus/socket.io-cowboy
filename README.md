@@ -3,7 +3,7 @@ socket.io-cowboy
 
 ### Overview
 
-!https://secure.travis-ci.org/sinnus/socket.io-cowboy.png(Build Status)!:http://travis-ci.org/sinnus/socket.io-cowboy
+[[http://travis-ci.org/sinnus/socket.io-cowboy][Travis-CI]] :: [[https://secure.travis-ci.org/sinnus/socket.io-cowboy.png]]
 
 This project is an open-source Erlang implementation of [Socket.IO](http://socket.io/) server. Based on [Cowboy](https://github.com/extend/cowboy).
 
