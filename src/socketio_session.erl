@@ -259,6 +259,12 @@ process_messages([Message|Rest], State = #state{id = SessionId, callback = Callb
             {stop, normal, ok, State};
         heartbeat ->
             process_messages(Rest, State);
+        {message, <<>>, EndPoint, Obj} ->
+            Callback:recv(self(), SessionId, {message, EndPoint, Obj}),
+            process_messages(Rest, State);
+        {json, <<>>, EndPoint, Obj} ->
+            Callback:recv(self(), SessionId, {json, EndPoint, Obj}),
+            process_messages(Rest, State);
         _ ->
             Callback:recv(self(), SessionId, Message),
             process_messages(Rest, State)

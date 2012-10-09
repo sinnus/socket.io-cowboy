@@ -38,7 +38,7 @@ open(Pid, Sid) ->
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
     ok.
 
-recv(Pid, _Sid, {json, _, <<>>, Json}) ->
+recv(Pid, _Sid, {json, <<>>, Json}) ->
     error_logger:info_msg("recv json ~p~n", [Json]),
     socketio_session:send_obj(Pid, Json),
     ok;
