@@ -28,7 +28,6 @@
 	<script>
                 var userName = 'user' + Math.floor((Math.random()*1000)+1);
 
-		io.transports = ['websocket'];
 		var socket =  io.connect('http://localhost:8080');
 
 		socket.on('connect', function() {

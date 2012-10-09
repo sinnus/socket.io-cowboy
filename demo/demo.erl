@@ -19,7 +19,7 @@ start() ->
                                                                                                          ?MODULE,
                                                                                                          socketio_data_protocol)]},
                        {['...'], cowboy_static, [
-                                                 {directory, {priv_dir, socketio, []}},
+                                                 {directory, <<"./priv">>},
                                                  {mimetypes, [
                                                               {<<".html">>, [<<"text/html">>]},
                                                               {<<".css">>, [<<"text/css">>]},

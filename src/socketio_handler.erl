@@ -15,7 +15,7 @@ init({tcp, http}, Req, [Config]) ->
         [<<"xhr-polling">>, Sid] ->
             case {socketio_session:find(Sid), Method} of
                 {{ok, Pid}, <<"GET">>} ->
-                    case socketio_session:pull(Pid, self()) of
+                    case socketio_session:pull_no_wait(Pid, self()) of
                         session_in_use ->
                             {ok, Req, {session_in_use, Config}};
                         [] ->
@@ -52,7 +52,7 @@ handle(Req, {create_session, Config = #config{heartbeat_timeout = HeartbeatTimeo
 
     _Pid = socketio_session:create(Sid, SessionTimeout, Callback),
 
-    Result = <<":", HeartbeatTimeoutBin/binary, ":", SessionTimeoutBin/binary, ":xhr-polling,websocket">>,
+    Result = <<":", HeartbeatTimeoutBin/binary, ":", SessionTimeoutBin/binary, ":websocket,xhr-polling">>,
     {ok, Req1} = cowboy_req:reply(200, text_headers(), <<Sid/binary, Result/binary>>, Req),
     {ok, Req1, Config};
 
@@ -94,6 +94,8 @@ info(_Info, Req, State) ->
     {ok, Req, State}.
 
 terminate(_Req, _State) ->
+
+
     ok.
 
 text_headers() ->

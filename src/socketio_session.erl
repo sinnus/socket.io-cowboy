@@ -5,7 +5,7 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/3, init/0, configure/5, create/3, find/1, pull/2, poll/1, send/2, recv/2,
+-export([start_link/3, init/0, configure/5, create/3, find/1, pull/2, pull_no_wait/2, poll/1, send/2, recv/2,
          send_message/2, send_obj/2, refresh/1, disconnect/1]).
 
 %% gen_server callbacks
@@ -50,7 +50,10 @@ find(SessionId) ->
     end.
 
 pull(Pid, Caller) ->
-    gen_server:call(Pid, {pull, Caller}, infinity).
+    gen_server:call(Pid, {pull, Caller, true}, infinity).
+
+pull_no_wait(Pid, Caller) ->
+    gen_server:call(Pid, {pull, Caller, false}, infinity).
 
 poll(Pid) ->
     gen_server:call(Pid, {poll}, infinity).
@@ -121,13 +124,19 @@ init([SessionId, SessionTimeout, Callback]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({pull, Pid}, _From,  State = #state{messages = Messages, caller = undefined}) ->
+handle_call({pull, Pid, Wait}, _From,  State = #state{messages = Messages, caller = undefined}) ->
     State1 = refresh_session_timeout(State),
     case Messages of
         [] ->
             {reply, [], State1#state{caller = Pid}};
         _ ->
-            {reply, lists:reverse(Messages), State1#state{messages = [], caller = Pid}}
+            NewCaller = case Wait of
+                            true ->
+                                Pid;
+                            false ->
+                                undefined
+                        end,
+            {reply, lists:reverse(Messages), State1#state{messages = [], caller = NewCaller}}
     end;
 
 handle_call({pull, _Pid}, _From,  State) ->
