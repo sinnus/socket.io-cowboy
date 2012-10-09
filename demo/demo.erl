@@ -28,7 +28,8 @@ start() ->
                       ]}
                ],
 
-    cowboy:start_http(socketio_http_listener, 100, [{port, 8080}],
+    cowboy:start_http(socketio_http_listener, 100, [{host, "127.0.0.1"},
+                                                    {port, 8080}],
                       [{dispatch, Dispatch}]
                      ).
 
