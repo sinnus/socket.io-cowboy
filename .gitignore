@@ -1,3 +1,5 @@
+ebin
+stress/ebin
 .eunit
 deps
 *.o
