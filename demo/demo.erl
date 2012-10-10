@@ -46,6 +46,10 @@ recv(_Pid, _Sid, {json, <<>>, Json}) ->
     demo_mgr:publish_to_all(Json),
     ok;
 
+recv(Pid, Sid, {message, <<>>, Message}) ->
+    socketio_session:send_message(Pid, Message),
+    ok;
+
 recv(Pid, Sid, Message) ->
     error_logger:info_msg("recv ~p ~p ~p~n", [Pid, Sid, Message]),
     ok.
