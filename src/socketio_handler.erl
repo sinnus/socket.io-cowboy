@@ -26,10 +26,14 @@ init({tcp, http}, Req, [Config]) ->
                     end;
                 {{ok, Pid}, <<"POST">>} ->
                     Protocol = Config#config.protocol,
-                    {ok, Body, Req1} = cowboy_req:body(Req),
-                    Messages = Protocol:decode(Body),
-                    socketio_session:recv(Pid, Messages),
-                    {ok, Req1, {ok, Config}};
+                    case cowboy_req:body(Req) of
+                        {ok, Body, Req1} ->
+                            Messages = Protocol:decode(Body),
+                            socketio_session:recv(Pid, Messages),
+                            {ok, Req1, {ok, Config}};
+                        {error, _} ->
+                            {shutdown, Req, {error, Config}}
+                    end;
                 {{error, not_found}, _} ->
                     {ok, Req, {not_found, Sid, Config}};
                 _ ->
