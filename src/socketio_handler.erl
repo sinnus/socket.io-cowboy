@@ -81,12 +81,12 @@ handle(Req, Config) ->
     {ok, Req1, Config}.
 
 info({timeout, _TRef, {?MODULE, Pid}}, Req, {heartbeat, Config}) ->
-    safe_poll(Req, Config, Pid);
+    safe_poll(Req, Config, Pid, false);
 
 info({message_arrived, Pid}, Req, {heartbeat, Config}) ->
-    safe_poll(Req, Config, Pid);
+    safe_poll(Req, Config, Pid, true);
 
-info(_Info, Req, State) ->
+info(Info, Req, State) ->
     {ok, Req, State}.
 
 terminate(_Req, _State) ->
@@ -101,15 +101,21 @@ reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
     Packet = Protocol:encode(Messages),
     cowboy_req:reply(200, text_headers(), Packet, Req).
 
-safe_poll(Req, Config = #config{protocol = Protocol}, Pid) ->
-    {ok, Req1} = try
-                     Messages = socketio_session:poll(Pid),
-                     reply_messages(Req, Messages, Config)
-                 catch
-                     exit:{noproc, _} ->
-                         cowboy_req:reply(200, text_headers(), Protocol:encode(disconnect), Req)
-                 end,
-    {ok, Req1, Config}.
+safe_poll(Req, Config = #config{protocol = Protocol}, Pid, WaitIfEmpty) ->
+    try
+        Messages = socketio_session:poll(Pid),
+        case {WaitIfEmpty, Messages} of
+            {true, []} ->
+                {loop, Req, Config, infinity};
+            _ ->
+                {ok, Req1} = reply_messages(Req, Messages, Config),
+                {ok, Req1, Config}
+        end
+    catch
+        exit:{noproc, _} ->
+            {ok, RD} = cowboy_req:reply(200, text_headers(), Protocol:encode(disconnect), Req),
+            {ok, RD, Config}
+    end.
 
 %% Websocket handlers
 websocket_init(_TransportName, Req, [Config]) ->
