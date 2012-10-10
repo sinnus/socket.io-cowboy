@@ -14,7 +14,7 @@ start_link() ->
 init([]) ->
     {ok, {{simple_one_for_one, 10, 10},
           [{undefined, {socketio_session, start_link, []},
-            transient, 5000, worker, [socketio_session]}]}}.
+            temporary, 5000, worker, [socketio_session]}]}}.
 
 start_child(SessionId, SessionTimeout, Callback) ->
    supervisor:start_child(?MODULE, [SessionId, SessionTimeout, Callback]).
