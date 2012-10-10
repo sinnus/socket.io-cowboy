@@ -6,23 +6,25 @@
          websocket_init/3, websocket_handle/3,
          websocket_info/3, websocket_terminate/3]).
 
+-record(http_state, {action, config, sid, heartbeat_tref, messages}).
+
 init({tcp, http}, Req, [Config]) ->
     {PathInfo, _} = cowboy_req:path_info(Req),
     {Method, _} = cowboy_req:method(Req),
     case PathInfo of
         [] ->
-            {ok, Req, {create_session, Config}};
+            {ok, Req, #http_state{action = create_session, config = Config}};
         [<<"xhr-polling">>, Sid] ->
             case {socketio_session:find(Sid), Method} of
                 {{ok, Pid}, <<"GET">>} ->
                     case socketio_session:pull_no_wait(Pid, self()) of
                         session_in_use ->
-                            {ok, Req, {session_in_use, Config}};
+                            {ok, Req, #http_state{action = session_in_use, config = Config, sid = Sid}};
                         [] ->
-                            erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
-                            {loop, Req, {heartbeat, Config}, infinity};
+                            TRef = erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
+                            {loop, Req, #http_state{action = heartbeat, config = Config, sid = Sid, heartbeat_tref = TRef}, infinity};
                         Messages ->
-                            {ok, Req, {data, Messages, Config}}
+                            {ok, Req, #http_state{action = data, messages = Messages, config = Config, sid = Sid}}
                     end;
                 {{ok, Pid}, <<"POST">>} ->
                     Protocol = Config#config.protocol,
@@ -30,14 +32,14 @@ init({tcp, http}, Req, [Config]) ->
                         {ok, Body, Req1} ->
                             Messages = Protocol:decode(Body),
                             socketio_session:recv(Pid, Messages),
-                            {ok, Req1, {ok, Config}};
+                            {ok, Req1, #http_state{action = ok, config = Config, sid = Sid}};
                         {error, _} ->
-                            {shutdown, Req, {error, Config}}
+                            {shutdown, Req, #http_state{action = error, config = Config, sid = Sid}}
                     end;
                 {{error, not_found}, _} ->
-                    {ok, Req, {not_found, Sid, Config}};
+                    {ok, Req, #http_state{action = not_found, sid = Sid, config = Config}};
                 _ ->
-                    {ok, Req, Config}
+                    {ok, Req, #http_state{action = error, sid = Sid, config = Config}}
             end;
         [<<"websocket">>, _Sid] ->
             {upgrade, protocol, cowboy_websocket};
@@ -46,9 +48,9 @@ init({tcp, http}, Req, [Config]) ->
     end.
 
 %% Http handlers
-handle(Req, {create_session, Config = #config{heartbeat_timeout = HeartbeatTimeout,
-                                              session_timeout = SessionTimeout,
-                                              callback = Callback}}) ->
+handle(Req, HttpState = #http_state{action = create_session, config = #config{heartbeat_timeout = HeartbeatTimeout,
+                                                                              session_timeout = SessionTimeout,
+                                                                              callback = Callback}}) ->
     Sid = uuids:new(),
 
     HeartbeatTimeoutBin = list_to_binary(integer_to_list(HeartbeatTimeout div 1000)),
@@ -58,42 +60,45 @@ handle(Req, {create_session, Config = #config{heartbeat_timeout = HeartbeatTimeo
 
     Result = <<":", HeartbeatTimeoutBin/binary, ":", SessionTimeoutBin/binary, ":websocket,xhr-polling">>,
     {ok, Req1} = cowboy_req:reply(200, text_headers(), <<Sid/binary, Result/binary>>, Req),
-    {ok, Req1, Config};
+    {ok, Req1, HttpState};
 
-handle(Req, {data, Messages, Config}) ->
+handle(Req, HttpState = #http_state{action = data, messages = Messages, config = Config}) ->
     {ok, Req1} = reply_messages(Req, Messages, Config),
-    {ok, Req1, Config};
+    {ok, Req1, HttpState};
 
-handle(Req, {not_found, _Sid, Config}) ->
+handle(Req, HttpState = #http_state{action = not_found}) ->
     {ok, Req1} = cowboy_req:reply(404, [], <<>>, Req),
-    {ok, Req1, Config};
+    {ok, Req1, HttpState};
 
-handle(Req, {send, Config}) ->
+handle(Req, HttpState = #http_state{action = send}) ->
     {ok, Req1} = cowboy_req:reply(200, [], <<>>, Req),
-    {ok, Req1, Config};
+    {ok, Req1, HttpState};
 
-handle(Req, {session_in_use, Config}) ->
+handle(Req, HttpState = #http_state{action = session_in_use}) ->
     {ok, Req1} = cowboy_req:reply(404, [], <<>>, Req),
-    {ok, Req1, Config};
+    {ok, Req1, HttpState};
 
-handle(Req, {ok, Config}) ->
+handle(Req, HttpState = #http_state{action = ok}) ->
     {ok, Req1} = cowboy_req:reply(200, text_headers(), <<>>, Req),
-    {ok, Req1, Config};
+    {ok, Req1, HttpState};
 
-handle(Req, Config) ->
+handle(Req, HttpState) ->
     {ok, Req1} = cowboy_req:reply(404, [], <<>>, Req),
-    {ok, Req1, Config}.
+    {ok, Req1, HttpState}.
 
-info({timeout, _TRef, {?MODULE, Pid}}, Req, {heartbeat, Config}) ->
-    safe_poll(Req, Config, Pid, false);
+info({timeout, TRef, {?MODULE, Pid}}, Req, HttpState = #http_state{action = heartbeat, heartbeat_tref = TRef}) ->
+    safe_poll(Req, HttpState#http_state{heartbeat_tref = undefined}, Pid, false);
 
-info({message_arrived, Pid}, Req, {heartbeat, Config}) ->
-    safe_poll(Req, Config, Pid, true);
+info({message_arrived, Pid}, Req, HttpState = #http_state{action = heartbeat}) ->
+    safe_poll(Req, HttpState, Pid, true);
 
-info(_Info, Req, State) ->
-    {ok, Req, State}.
+info(_Info, Req, HttpState) ->
+    {ok, Req, HttpState}.
 
-terminate(_Req, _State) ->
+terminate(_Req, _HttpState = #http_state{heartbeat_tref = undefined}) ->
+    ok;
+terminate(_Req, _HttpState = #http_state{heartbeat_tref = HeartbeatTRef}) ->
+    erlang:cancel_timer(HeartbeatTRef),
     ok.
 
 text_headers() ->
@@ -105,20 +110,20 @@ reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
     Packet = Protocol:encode(Messages),
     cowboy_req:reply(200, text_headers(), Packet, Req).
 
-safe_poll(Req, Config = #config{protocol = Protocol}, Pid, WaitIfEmpty) ->
+safe_poll(Req, HttpState = #http_state{config = Config = #config{protocol = Protocol}}, Pid, WaitIfEmpty) ->
     try
         Messages = socketio_session:poll(Pid),
         case {WaitIfEmpty, Messages} of
             {true, []} ->
-                {loop, Req, Config, infinity};
+                {loop, Req, HttpState};
             _ ->
                 {ok, Req1} = reply_messages(Req, Messages, Config),
-                {ok, Req1, Config}
+                {ok, Req1, HttpState}
         end
     catch
         exit:{noproc, _} ->
             {ok, RD} = cowboy_req:reply(200, text_headers(), Protocol:encode(disconnect), Req),
-            {ok, RD, Config}
+            {ok, RD, HttpState#http_state{action = disconnect}}
     end.
 
 %% Websocket handlers
