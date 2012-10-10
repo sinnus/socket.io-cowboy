@@ -90,7 +90,7 @@ info(_Info, Req, State) ->
     {ok, Req, State}.
 
 terminate(_Req, _State) ->
-   ok.
+    ok.
 
 text_headers() ->
     [{<<"content-Type">>, <<"text/plain; charset=utf-8">>},
@@ -117,7 +117,7 @@ websocket_init(_TransportName, Req, [Config]) ->
     [<<"websocket">>, Sid] = PathInfo,
     case socketio_session:find(Sid) of
         {ok, Pid} ->
-	    erlang:monitor(process, Pid),
+            erlang:monitor(process, Pid),
             self() ! go,
             erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
             {ok, Req, {Config, Pid}};
@@ -135,7 +135,7 @@ websocket_handle(_Data, Req, State) ->
 websocket_info(go, Req, {Config, Pid}) ->
     case socketio_session:pull(Pid, self()) of
         session_in_use ->
-            {shutdown, Req, {Config, Pid}};
+            {ok, Req, {Config, Pid}};
         Messages ->
             reply_ws_messages(Req, Messages, {Config, Pid})
     end;

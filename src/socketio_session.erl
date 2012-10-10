@@ -139,7 +139,7 @@ handle_call({pull, Pid, Wait}, _From,  State = #state{messages = Messages, calle
             {reply, lists:reverse(Messages), State1#state{messages = [], caller = NewCaller}}
     end;
 
-handle_call({pull, _Pid}, _From,  State) ->
+handle_call({pull, _Pid, _}, _From,  State) ->
     {reply, session_in_use, State};
 
 handle_call({poll}, _From, State = #state{messages = Messages}) ->
