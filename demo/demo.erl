@@ -28,6 +28,8 @@ start() ->
                       ]}
                ],
 
+    demo_mgr:start_link(),
+
     cowboy:start_http(socketio_http_listener, 100, [{host, "127.0.0.1"},
                                                     {port, 8080}],
                       [{dispatch, Dispatch}]
@@ -36,11 +38,12 @@ start() ->
 %% ---- Handlers
 open(Pid, Sid) ->
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
+    demo_mgr:add_session(Pid),
     ok.
 
-recv(Pid, _Sid, {json, <<>>, Json}) ->
+recv(_Pid, _Sid, {json, <<>>, Json}) ->
     error_logger:info_msg("recv json ~p~n", [Json]),
-    socketio_session:send_obj(Pid, Json),
+    demo_mgr:publish_to_all(Json),
     ok;
 
 recv(Pid, Sid, Message) ->
@@ -49,4 +52,5 @@ recv(Pid, Sid, Message) ->
 
 close(Pid, Sid) ->
     error_logger:info_msg("close ~p ~p~n", [Pid, Sid]),
+    demo_mgr:remove_session(Pid),
     ok.
