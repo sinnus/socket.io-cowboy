@@ -86,7 +86,7 @@ info({timeout, _TRef, {?MODULE, Pid}}, Req, {heartbeat, Config}) ->
 info({message_arrived, Pid}, Req, {heartbeat, Config}) ->
     safe_poll(Req, Config, Pid, true);
 
-info(Info, Req, State) ->
+info(_Info, Req, State) ->
     {ok, Req, State}.
 
 terminate(_Req, _State) ->
