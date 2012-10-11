@@ -17,21 +17,21 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
-	 get_sid/2, ready/2, polling_result_ready/2, wait_polling_result/2,
-	 state_name/3, handle_event/3,
-	 handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
+         get_sid/2, ready/2, polling_result_ready/2, wait_polling_result/2,
+         state_name/3, handle_event/3,
+         handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
--record(state, {url = "http://localhost:8080/socket.io",
-		transport_url,
-	        heartbeat_timeout,
-		session_timeout,
-		body = [],
-		connected = false,
-		sid}).
+-record(state, {url,
+                transport_url,
+                heartbeat_timeout,
+                session_timeout,
+                body = [],
+                connected = false,
+                sid}).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -45,8 +45,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_fsm:start_link(?MODULE, [], []).
+start_link(Url) ->
+    gen_fsm:start_link(?MODULE, [Url], []).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -65,9 +65,9 @@ start_link() ->
 %%                     {stop, StopReason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
+init([Url]) ->
     gen_fsm:send_event(self(), go),
-    {ok, get_sid, #state{}}.
+    {ok, get_sid, #state{url = Url}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -86,16 +86,16 @@ init([]) ->
 %%--------------------------------------------------------------------
 get_sid(go, State = #state{url = Url}) ->
     case ibrowse:send_req(Url ++ "/1", [], get, []) of
-	{ok, "200", _Headers, Body} ->
-	    [Sid, H, S, _Transports] = string:tokens(Body, ":"),
-	    gen_fsm:send_event(self(), poll),
-	    {next_state, ready, State#state{transport_url = Url ++ "/1/xhr-polling/" ++ Sid,
-					    sid = Sid,
-					    heartbeat_timeout = H,
-					    session_timeout = S}};
-	{error, Error} ->
-	    error_logger:error_msg("Client failed with error ~p~n", [Error]),
-	    {stop, normal, State}
+        {ok, "200", _Headers, Body} ->
+            [Sid, H, S, _Transports] = string:tokens(Body, ":"),
+            gen_fsm:send_event(self(), poll),
+            {next_state, ready, State#state{transport_url = Url ++ "/1/xhr-polling/" ++ Sid,
+                                            sid = Sid,
+                                            heartbeat_timeout = H,
+                                            session_timeout = S}};
+        {error, Error} ->
+            error_logger:error_msg("Client failed with error ~p~n", [Error]),
+            {stop, normal, State}
     end.
 
 ready(poll, State = #state{transport_url = TransportUrl}) ->
@@ -115,11 +115,11 @@ polling_result_ready(go, State = #state{body = _Body, transport_url = TransportU
     %% Check  body
     gen_fsm:send_event(self(), poll),
     case ibrowse:send_req(TransportUrl, [], post, "3:::PING13:::PING23::PING4", []) of
-	{ok, "200", _Headers, []} ->
-	    {next_state, ready, State};
-	{error, Error} ->
-	    error_logger:error_msg("Client failed with error ~p~n", [Error]),
-	    {stop, normal, State}
+        {ok, "200", _Headers, []} ->
+            {next_state, ready, State};
+        {error, Error} ->
+            error_logger:error_msg("Client failed with error ~p~n", [Error]),
+            {stop, normal, State}
     end.
 %% @private
 %% @doc
