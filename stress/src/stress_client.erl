@@ -1,5 +1,19 @@
+%% @author Kirill Trofimov <sinnus@gmail.com>
+%% @copyright 2012 Kirill Trofimov
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%    http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 -module(stress_client).
-
+-author('Kirill Trofimov <sinnus@gmail.com>').
 -behaviour(gen_fsm).
 
 %% API
@@ -183,7 +197,7 @@ handle_info({ibrowse_async_headers, _ReqId, _Status, _Headers}, wait_polling_res
 
 handle_info({ibrowse_async_response, _ReqId, Body}, wait_polling_result, State) ->
     {next_state, wait_polling_result, State#state{body = Body}};
-    
+
 handle_info({ibrowse_async_response_end, _ReqId}, wait_polling_result, State) ->
     gen_fsm:send_event(self(), go),
     {next_state, polling_result_ready, State};
