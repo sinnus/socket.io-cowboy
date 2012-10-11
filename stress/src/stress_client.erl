@@ -30,7 +30,9 @@
                 heartbeat_timeout,
                 session_timeout,
                 body = [],
+                send_packets,
                 connected = false,
+                error,
                 sid}).
 %%%===================================================================
 %%% API
@@ -52,37 +54,10 @@ start_link(Url) ->
 %%% gen_fsm callbacks
 %%%===================================================================
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Whenever a gen_fsm is started using gen_fsm:start/[3,4] or
-%% gen_fsm:start_link/[3,4], this function is called by the new
-%% process to initialize.
-%%
-%% @spec init(Args) -> {ok, StateName, State} |
-%%                     {ok, StateName, State, Timeout} |
-%%                     ignore |
-%%                     {stop, StopReason}
-%% @end
-%%--------------------------------------------------------------------
 init([Url]) ->
     gen_fsm:send_event(self(), go),
     {ok, get_sid, #state{url = Url}}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:send_event/2, the instance of this function with the same
-%% name as the current state name StateName is called to handle
-%% the event. It is also called if a timeout occurs.
-%%
-%% @spec state_name(Event, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
 %%--------------------------------------------------------------------
 get_sid(go, State = #state{url = Url}) ->
     case ibrowse:send_req(Url ++ "/1", [], get, []) of
@@ -100,96 +75,41 @@ get_sid(go, State = #state{url = Url}) ->
 
 ready(poll, State = #state{transport_url = TransportUrl}) ->
     %% TODO Run request timeout == session timeout because we cannot detect async request termination
-    %% TODO Check error
-    {ibrowse_req_id, _ReqId} = ibrowse:send_req(TransportUrl, [], get, [], [{stream_to, self()}]),
-    {next_state, wait_polling_result, State}.
+    case ibrowse:send_req(TransportUrl, [], get, [], [{stream_to, self()}]) of
+        {ibrowse_req_id, _ReqId} ->
+            {next_state, wait_polling_result, State};
+        {error, Error} ->
+            {stop, normal, State#state{error = {error, Error}}}
+    end.
 
 wait_polling_result(Event, State) ->
     {next_state, Event, State}.
 
 polling_result_ready(go, State = #state{body = "1::", connected = false}) ->
-    gen_fsm:send_event(self(), go),
-    {next_state, polling_result_ready, State#state{connected = true}};
+    send_test_packets(State#state{connected = true});
 
-polling_result_ready(go, State = #state{body = _Body, transport_url = TransportUrl}) ->
-    %% Check  body
-    gen_fsm:send_event(self(), poll),
-    case ibrowse:send_req(TransportUrl, [], post, "3:::PING13:::PING23::PING4", []) of
-        {ok, "200", _Headers, []} ->
-            {next_state, ready, State};
-        {error, Error} ->
-            error_logger:error_msg("Client failed with error ~p~n", [Error]),
-            {stop, normal, State}
+polling_result_ready(go, State = #state{body = Body, send_packets = PrevPackets, connected = true}) ->
+    Packets = socketio_data_protocol:decode(list_to_binary(Body)),
+    case Packets of
+        PrevPackets ->
+            send_test_packets(State);
+        _ ->
+            {stop, normal, State#state{error = {wrong_result_packets, {PrevPackets, Packets}}}}
     end.
-%% @private
-%% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:sync_send_event/[2,3], the instance of this function with
-%% the same name as the current state name StateName is called to
-%% handle the event.
-%%
-%% @spec state_name(Event, From, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {reply, Reply, NextStateName, NextState} |
-%%                   {reply, Reply, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState} |
-%%                   {stop, Reason, Reply, NewState}
-%% @end
 %%--------------------------------------------------------------------
 state_name(_Event, _From, State) ->
     Reply = ok,
     {reply, Reply, state_name, State}.
 
 %%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Whenever a gen_fsm receives an event sent using
-%% gen_fsm:send_all_state_event/2, this function is called to handle
-%% the event.
-%%
-%% @spec handle_event(Event, StateName, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
-%%--------------------------------------------------------------------
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Whenever a gen_fsm receives an event sent using
-%% gen_fsm:sync_send_all_state_event/[2,3], this function is called
-%% to handle the event.
-%%
-%% @spec handle_sync_event(Event, From, StateName, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {reply, Reply, NextStateName, NextState} |
-%%                   {reply, Reply, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState} |
-%%                   {stop, Reason, Reply, NewState}
-%% @end
 %%--------------------------------------------------------------------
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_fsm when it receives any
-%% message other than a synchronous or asynchronous event
-%% (or a system message).
-%%
-%% @spec handle_info(Info,StateName,State)->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
 %%--------------------------------------------------------------------
 handle_info({ibrowse_async_headers, _ReqId, _Status, _Headers}, wait_polling_result, State) ->
     %% Check status
@@ -206,28 +126,16 @@ handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% This function is called by a gen_fsm when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any
-%% necessary cleaning up. When it returns, the gen_fsm terminates with
-%% Reason. The return value is ignored.
-%%
-%% @spec terminate(Reason, StateName, State) -> void()
-%% @end
-%%--------------------------------------------------------------------
-terminate(_Reason, _StateName, _State = #state{sid = Sid}) ->
+terminate(_Reason, _StateName, _State = #state{sid = Sid, error = Error}) ->
     error_logger:info_msg("Terminate session ~p~n", [Sid]),
-    ok.
+    case Error of
+        undefined ->
+            ok;
+        _ ->
+            error_logger:error_msg("Session ~p failed with error ~p~n", [Sid, Error]),
+            ok
+    end.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Convert process state when code is changed
-%%
-%% @spec code_change(OldVsn, StateName, State, Extra) ->
-%%                   {ok, StateName, NewState}
-%% @end
 %%--------------------------------------------------------------------
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
@@ -235,3 +143,19 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+get_test_packets() ->
+    [
+     {message, <<>>, <<>>, <<"PING1">>},
+     {message, <<>>, <<>>, <<"PING2">>},
+     {message, <<>>, <<>>, <<"PING3">>}
+    ].
+
+send_test_packets(State = #state{transport_url = TransportUrl}) ->
+    SendPackets = get_test_packets(),
+    case ibrowse:send_req(TransportUrl, [], post, socketio_data_protocol:encode(SendPackets), []) of
+        {ok, "200", _Headers, []} ->
+            gen_fsm:send_event(self(), poll),
+            {next_state, ready, State#state{send_packets = SendPackets}};
+        {error, Error} ->
+            {stop, normal, State#state{error = {error, Error}}}
+    end.

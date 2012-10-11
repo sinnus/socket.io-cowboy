@@ -18,12 +18,13 @@
 
 start() ->
     ok = application:start(sasl),
+    ok = application:start(stress_test),
     {ok, _} = ibrowse:start(),
 
-    N = 1000,
+    {ok, Host} = application:get_env(stress_test, host),
+    {ok, Port} = application:get_env(stress_test, port),
+    {ok, N} = application:get_env(stress_test, clients),
 
-    Host = "localhost",
-    Port = 8080,
     ibrowse:set_max_sessions(Host, Port, N),
     ibrowse:set_max_pipeline_size(Host, Port, N),
 
