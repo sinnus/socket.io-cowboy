@@ -21,6 +21,8 @@ start() ->
     ok = application:start(stress_test),
     {ok, _} = ibrowse:start(),
 
+    {ok, _} = stress_mgr:start_link(),
+
     {ok, Host} = application:get_env(stress_test, host),
     {ok, Port} = application:get_env(stress_test, port),
     {ok, N} = application:get_env(stress_test, clients),

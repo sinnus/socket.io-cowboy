@@ -17,7 +17,7 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/1]).
+-export([start_link/1, timestamp_to_number/1]).
 
 %% gen_fsm callbacks
 -export([init/1,
@@ -33,6 +33,7 @@
                 send_packets,
                 connected = false,
                 error,
+                start_poll_ts,
                 sid}).
 %%%===================================================================
 %%% API
@@ -55,6 +56,7 @@ start_link(Url) ->
 %%%===================================================================
 
 init([Url]) ->
+    stress_mgr:inc_init_count(),
     gen_fsm:send_event(self(), go),
     {ok, get_sid, #state{url = Url}}.
 
@@ -69,26 +71,28 @@ get_sid(go, State = #state{url = Url}) ->
                                             heartbeat_timeout = H,
                                             session_timeout = S}};
         {error, Error} ->
-            error_logger:error_msg("Client failed with error ~p~n", [Error]),
-            {stop, normal, State}
+            {stop, normal, State#state{error = {send_req, Error}}}
     end.
 
 ready(poll, State = #state{transport_url = TransportUrl}) ->
     %% TODO Run request timeout == session timeout because we cannot detect async request termination
+    StartPollTS = erlang:now(),
     case ibrowse:send_req(TransportUrl, [], get, [], [{stream_to, self()}]) of
         {ibrowse_req_id, _ReqId} ->
-            {next_state, wait_polling_result, State};
+            {next_state, wait_polling_result, State#state{start_poll_ts = StartPollTS}};
         {error, Error} ->
-            {stop, normal, State#state{error = {error, Error}}}
+            {stop, normal, State#state{error = {send_req, Error}}}
     end.
 
 wait_polling_result(Event, State) ->
     {next_state, Event, State}.
 
-polling_result_ready(go, State = #state{body = "1::", connected = false}) ->
+polling_result_ready(go, State = #state{sid = Sid, body = "1::", connected = false, start_poll_ts = StartPollTS}) ->
+    log_polling_req(Sid, StartPollTS, erlang:now()),
     send_test_packets(State#state{connected = true});
 
-polling_result_ready(go, State = #state{body = Body, send_packets = PrevPackets, connected = true}) ->
+polling_result_ready(go, State = #state{sid = Sid, body = Body, send_packets = PrevPackets, connected = true, start_poll_ts = StartPollTS}) ->
+    log_polling_req(Sid, StartPollTS, erlang:now()),
     Packets = socketio_data_protocol:decode(list_to_binary(Body)),
     case Packets of
         PrevPackets ->
@@ -127,11 +131,13 @@ handle_info(_Info, StateName, State) ->
 
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, _State = #state{sid = Sid, error = Error}) ->
+    stress_mgr:inc_finish_count(),
     error_logger:info_msg("Terminate session ~p~n", [Sid]),
     case Error of
         undefined ->
             ok;
         _ ->
+            stress_mgr:inc_fail_count(),
             error_logger:error_msg("Session ~p failed with error ~p~n", [Sid, Error]),
             ok
     end.
@@ -157,5 +163,14 @@ send_test_packets(State = #state{transport_url = TransportUrl}) ->
             gen_fsm:send_event(self(), poll),
             {next_state, ready, State#state{send_packets = SendPackets}};
         {error, Error} ->
-            {stop, normal, State#state{error = {error, Error}}}
+            {stop, normal, State#state{error = {send_req, Error}}}
     end.
+
+timestamp_to_number({MegaSecs, Secs, MicroSecs}) ->
+	Secs1 = (MegaSecs * 1000000) + Secs,
+	Epoch = Secs1 * 1000 + trunc(MicroSecs / 1000),
+    Epoch.
+
+log_polling_req(Sid, StartTS, EndTS) ->
+    Secs = timestamp_to_number(EndTS) - timestamp_to_number(StartTS),
+    error_logger:info_msg("Sid ~p ~p secs", [Sid, Secs / 10000]).
