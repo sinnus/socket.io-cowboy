@@ -34,7 +34,8 @@
                 session_timeout,
                 session_timeout_tref,
                 caller,
-                registered}).
+                registered,
+                session_state}).
 
 %%%===================================================================
 %%% API
@@ -210,9 +211,9 @@ handle_info(session_timeout, State) ->
 handle_info(register_in_ets, State = #state{id = SessionId, registered = false, callback = Callback}) ->
     case ets:insert_new(?ETS, {SessionId, self()}) of
         true ->
-            Callback:open(self(), SessionId),
+            SessionState = Callback:open(self(), SessionId),
             send(self(), {connect, <<>>}),
-            {noreply, State#state{registered = true}};
+            {noreply, State#state{registered = true, session_state = SessionState}};
         false ->
             {stop, session_id_exists, State}
     end;
@@ -230,11 +231,11 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _State = #state{id = SessionId, registered = Registered, callback = Callback}) ->
+terminate(_Reason, _State = #state{id = SessionId, registered = Registered, callback = Callback, session_state = SessionState}) ->
     ets:delete(?ETS, SessionId),
     case Registered of
         true ->
-            Callback:close(self(), SessionId),
+            Callback:close(self(), SessionId, SessionState),
             ok;
         _ ->
             ok
@@ -263,7 +264,7 @@ refresh_session_timeout(State = #state{session_timeout = Timeout, session_timeou
 process_messages([], _State) ->
     {reply, ok, _State};
 
-process_messages([Message|Rest], State = #state{id = SessionId, callback = Callback}) ->
+process_messages([Message|Rest], State = #state{id = SessionId, callback = Callback, session_state = SessionState}) ->
     case Message of
         {disconnect, _EndPoint} ->
             {stop, normal, ok, State};
@@ -274,12 +275,12 @@ process_messages([Message|Rest], State = #state{id = SessionId, callback = Callb
         heartbeat ->
             process_messages(Rest, State);
         {message, <<>>, EndPoint, Obj} ->
-            Callback:recv(self(), SessionId, {message, EndPoint, Obj}),
+            Callback:recv(self(), SessionId, {message, EndPoint, Obj}, SessionState),
             process_messages(Rest, State);
         {json, <<>>, EndPoint, Obj} ->
-            Callback:recv(self(), SessionId, {json, EndPoint, Obj}),
+            Callback:recv(self(), SessionId, {json, EndPoint, Obj}, SessionState),
             process_messages(Rest, State);
         _ ->
-            Callback:recv(self(), SessionId, Message),
+            Callback:recv(self(), SessionId, Message, SessionState),
             process_messages(Rest, State)
     end.

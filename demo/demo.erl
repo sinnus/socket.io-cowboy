@@ -1,6 +1,8 @@
 -module(demo).
 
--export([start/0, open/2, recv/3, close/2]).
+-export([start/0, open/2, recv/4, close/3]).
+
+-record(session_state, {}).
 
 start() ->
     ok = application:start(sasl),
@@ -39,22 +41,22 @@ start() ->
 open(Pid, Sid) ->
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
     demo_mgr:add_session(Pid),
-    ok.
+    #session_state{}.
 
-recv(_Pid, _Sid, {json, <<>>, Json}) ->
+recv(_Pid, _Sid, {json, <<>>, Json}, SessionState = #session_state{}) ->
     error_logger:info_msg("recv json ~p~n", [Json]),
     demo_mgr:publish_to_all(Json),
-    ok;
+    SessionState;
 
-recv(Pid, _Sid, {message, <<>>, Message}) ->
+recv(Pid, _Sid, {message, <<>>, Message}, SessionState = #session_state{}) ->
     socketio_session:send_message(Pid, Message),
-    ok;
+    SessionState;
 
-recv(Pid, Sid, Message) ->
+recv(Pid, Sid, Message, SessionState = #session_state{}) ->
     error_logger:info_msg("recv ~p ~p ~p~n", [Pid, Sid, Message]),
-    ok.
+    SessionState.
 
-close(Pid, Sid) ->
+close(Pid, Sid, _SessionState = #session_state{}) ->
     error_logger:info_msg("close ~p ~p~n", [Pid, Sid]),
     demo_mgr:remove_session(Pid),
     ok.
