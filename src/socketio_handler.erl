@@ -20,7 +20,7 @@
          websocket_init/3, websocket_handle/3,
          websocket_info/3, websocket_terminate/3]).
 
--record(http_state, {action, config, sid, heartbeat_tref, messages}).
+-record(http_state, {action, config, sid, heartbeat_tref, messages, pid}).
 
 init({tcp, http}, Req, [Config]) ->
     {PathInfo, _} = cowboy_req:path_info(Req),
@@ -36,9 +36,9 @@ init({tcp, http}, Req, [Config]) ->
                             {ok, Req, #http_state{action = session_in_use, config = Config, sid = Sid}};
                         [] ->
                             TRef = erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
-                            {loop, Req, #http_state{action = heartbeat, config = Config, sid = Sid, heartbeat_tref = TRef}, infinity};
+                            {loop, Req, #http_state{action = heartbeat, config = Config, sid = Sid, heartbeat_tref = TRef, pid = Pid}, infinity};
                         Messages ->
-                            {ok, Req, #http_state{action = data, messages = Messages, config = Config, sid = Sid}}
+                            {ok, Req, #http_state{action = data, messages = Messages, config = Config, sid = Sid, pid = Pid}}
                     end;
                 {{ok, Pid}, <<"POST">>} ->
                     Protocol = Config#config.protocol,
@@ -109,11 +109,20 @@ info({message_arrived, Pid}, Req, HttpState = #http_state{action = heartbeat}) -
 info(_Info, Req, HttpState) ->
     {ok, Req, HttpState}.
 
-terminate(_Req, _HttpState = #http_state{heartbeat_tref = undefined}) ->
+terminate(_Req, _HttpState = #http_state{action = create_session}) ->
     ok;
-terminate(_Req, _HttpState = #http_state{heartbeat_tref = HeartbeatTRef}) ->
-    erlang:cancel_timer(HeartbeatTRef),
-    ok.
+
+terminate(_Req, _HttpState = #http_state{action = session_in_use}) ->
+    ok;
+
+terminate(_Req, _HttpState = #http_state{heartbeat_tref = HeartbeatTRef, pid = Pid}) ->
+    safe_ubsub_caller(Pid, self()),
+    case HeartbeatTRef of
+        undefined ->
+            ok;
+        _ ->
+            erlang:cancel_timer(HeartbeatTRef)
+    end.
 
 text_headers() ->
     [{<<"content-Type">>, <<"text/plain; charset=utf-8">>},
@@ -123,6 +132,15 @@ text_headers() ->
 reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
     Packet = Protocol:encode(Messages),
     cowboy_req:reply(200, text_headers(), Packet, Req).
+
+safe_ubsub_caller(Pid, Caller) ->
+    try
+        socketio_session:unsub_caller(Pid, Caller),
+        ok
+    catch
+        exit:{noproc, _} ->
+            error
+    end.
 
 safe_poll(Req, HttpState = #http_state{config = Config = #config{protocol = Protocol}}, Pid, WaitIfEmpty) ->
     try
