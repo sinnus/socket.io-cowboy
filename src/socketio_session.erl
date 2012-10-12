@@ -231,6 +231,6 @@ process_messages([Message|Rest], State = #state{id = SessionId, callback = Callb
             Callback:recv(self(), SessionId, {json, EndPoint, Obj}, SessionState),
             process_messages(Rest, State);
         _ ->
-            Callback:recv(self(), SessionId, Message, SessionState),
+            %% Skip message
             process_messages(Rest, State)
     end.
