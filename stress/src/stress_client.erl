@@ -62,7 +62,7 @@ init([Url]) ->
 
 %%--------------------------------------------------------------------
 get_sid(go, State = #state{url = Url}) ->
-    case ibrowse:send_req(Url ++ "/1", [], get, []) of
+    case ibrowse:send_req(Url ++ "/1/", [], get, [], []) of
         {ok, "200", _Headers, Body} ->
             [Sid, H, S, _Transports] = string:tokens(Body, ":"),
             gen_fsm:send_event(self(), poll),
@@ -71,7 +71,7 @@ get_sid(go, State = #state{url = Url}) ->
                                             heartbeat_timeout = H,
                                             session_timeout = S}};
         {error, Error} ->
-            {stop, normal, State#state{error = {send_req, Error}}}
+            {stop, normal, State#state{error = {create_session_send_req, Error}}}
     end.
 
 ready(poll, State = #state{transport_url = TransportUrl}) ->
@@ -158,7 +158,13 @@ get_test_packets() ->
 
 send_test_packets(State = #state{transport_url = TransportUrl}) ->
     SendPackets = get_test_packets(),
-    case ibrowse:send_req(TransportUrl, [], post, socketio_data_protocol:encode(SendPackets), []) of
+    PacketsBin = socketio_data_protocol:encode(SendPackets),
+
+    Headers = [{"Content-Type", "text/plain; charset=utf-8"},
+               {"Connection", "keep-alive"},
+               {"Content-Length", byte_size(PacketsBin)}],
+
+    case ibrowse:send_req(TransportUrl, Headers, post, PacketsBin, []) of
         {ok, "200", _Headers, []} ->
             gen_fsm:send_event(self(), poll),
             {next_state, ready, State#state{send_packets = SendPackets}};
