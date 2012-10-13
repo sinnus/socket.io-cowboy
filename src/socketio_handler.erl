@@ -169,7 +169,7 @@ websocket_init(_TransportName, Req, [Config]) ->
             erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
             {ok, Req, {Config, Pid}};
         {error, not_found} ->
-            {shutdown, Req, {Config, undefined}}
+            {shutdown, {Config, undefined}}
     end.
 
 websocket_handle({text, Data}, Req, {Config = #config{protocol = Protocol}, Pid}) ->
@@ -195,8 +195,8 @@ websocket_info({timeout, _TRef, {?MODULE, Pid}}, Req, {Config = #config{protocol
     erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
     Packet = Protocol:encode(heartbeat),
     {reply, {text, Packet}, Req, {Config, Pid}};
-websocket_info({'DOWN', _Ref, process, Pid, _Reason}, Req, State = {_Config, Pid}) ->
-    {shutdown, Req, State};
+websocket_info({'DOWN', _Ref, process, Pid, _Reason}, _Req, State = {_Config, Pid}) ->
+    {shutdown, State};
 websocket_info(_Info, Req, State) ->
     {ok, Req, State}.
 

@@ -41,7 +41,8 @@ start() ->
 open(Pid, Sid) ->
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
     demo_mgr:add_session(Pid),
-    {ok, #session_state{}}.
+    disconnect.
+%%    {ok, #session_state{}}.
 
 recv(_Pid, _Sid, {json, <<>>, Json}, SessionState = #session_state{}) ->
     error_logger:info_msg("recv json ~p~n", [Json]),
