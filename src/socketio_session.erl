@@ -178,9 +178,13 @@ handle_info(session_timeout, State) ->
 handle_info(register_in_ets, State = #state{id = SessionId, registered = false, callback = Callback}) ->
     case ets:insert_new(?ETS, {SessionId, self()}) of
         true ->
-            SessionState = Callback:open(self(), SessionId),
-            send(self(), {connect, <<>>}),
-            {noreply, State#state{registered = true, session_state = SessionState}};
+	    case Callback:open(self(), SessionId) of
+		{ok, SessionState} ->
+		    send(self(), {connect, <<>>}),
+		    {noreply, State#state{registered = true, session_state = SessionState}};
+		disconnect ->
+		    {stop, normal, State}
+	    end;
         false ->
             {stop, session_id_exists, State}
     end;
@@ -225,11 +229,11 @@ process_messages([Message|Rest], State = #state{id = SessionId, callback = Callb
         heartbeat ->
             process_messages(Rest, State);
         {message, <<>>, EndPoint, Obj} ->
-            Callback:recv(self(), SessionId, {message, EndPoint, Obj}, SessionState),
-            process_messages(Rest, State);
+            {ok, NewSessionState} = Callback:recv(self(), SessionId, {message, EndPoint, Obj}, SessionState),
+            process_messages(Rest, State#state{session_state = NewSessionState});
         {json, <<>>, EndPoint, Obj} ->
-            Callback:recv(self(), SessionId, {json, EndPoint, Obj}, SessionState),
-            process_messages(Rest, State);
+            {ok, NewSessionState} = Callback:recv(self(), SessionId, {json, EndPoint, Obj}, SessionState),
+            process_messages(Rest, State#state{session_state = NewSessionState});
         _ ->
             %% Skip message
             process_messages(Rest, State)
