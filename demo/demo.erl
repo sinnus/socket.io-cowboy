@@ -41,20 +41,20 @@ start() ->
 open(Pid, Sid) ->
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
     demo_mgr:add_session(Pid),
-    #session_state{}.
+    {ok, #session_state{}}.
 
 recv(_Pid, _Sid, {json, <<>>, Json}, SessionState = #session_state{}) ->
     error_logger:info_msg("recv json ~p~n", [Json]),
     demo_mgr:publish_to_all(Json),
-    SessionState;
+    {ok, SessionState};
 
 recv(Pid, _Sid, {message, <<>>, Message}, SessionState = #session_state{}) ->
     socketio_session:send_message(Pid, Message),
-    SessionState;
+    {ok, SessionState};
 
 recv(Pid, Sid, Message, SessionState = #session_state{}) ->
     error_logger:info_msg("recv ~p ~p ~p~n", [Pid, Sid, Message]),
-    SessionState.
+    {ok, SessionState}.
 
 close(Pid, Sid, _SessionState = #session_state{}) ->
     error_logger:info_msg("close ~p ~p~n", [Pid, Sid]),
