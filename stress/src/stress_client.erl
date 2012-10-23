@@ -165,7 +165,7 @@ send_test_packets(State = #state{transport_url = TransportUrl}) ->
                {"Content-Length", byte_size(PacketsBin)}],
 
     case ibrowse:send_req(TransportUrl, Headers, post, PacketsBin, []) of
-        {ok, "200", _Headers, []} ->
+        {ok, "200", _Headers, _} ->
             gen_fsm:send_event(self(), poll),
             {next_state, ready, State#state{send_packets = SendPackets}};
         {error, Error} ->
