@@ -189,6 +189,14 @@ handle_info(register_in_ets, State = #state{id = SessionId, registered = false, 
             {stop, session_id_exists, State}
     end;
 
+handle_info(Info, State = #state{id = Id, registered = true, callback = Callback, session_state = SessionState}) ->
+    case Callback:handle_info(self(), Id, Info, SessionState) of
+        {ok, NewSessionState} ->
+            {noreply, State#state{session_state = NewSessionState}};
+        {disconnect, NewSessionState} ->
+            {stop, normal, State#state{session_state = NewSessionState}}
+    end;
+
 handle_info(_Info, State) ->
     {noreply, State}.
 %%--------------------------------------------------------------------

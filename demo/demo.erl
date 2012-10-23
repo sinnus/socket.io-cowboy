@@ -1,6 +1,6 @@
 -module(demo).
 
--export([start/0, open/2, recv/4, close/3]).
+-export([start/0, open/2, recv/4, handle_info/4, close/3]).
 
 -record(session_state, {}).
 
@@ -39,6 +39,7 @@ start() ->
 
 %% ---- Handlers
 open(Pid, Sid) ->
+    erlang:send_after(5000, self(), tick),
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
     demo_mgr:add_session(Pid),
     {ok, #session_state{}}.
@@ -54,6 +55,13 @@ recv(Pid, _Sid, {message, <<>>, Message}, SessionState = #session_state{}) ->
 
 recv(Pid, Sid, Message, SessionState = #session_state{}) ->
     error_logger:info_msg("recv ~p ~p ~p~n", [Pid, Sid, Message]),
+    {ok, SessionState}.
+
+handle_info(_Pid, _Sid, tick, SessionState = #session_state{}) ->
+    error_logger:info_msg("Tick...", []),
+    {ok, SessionState};
+
+handle_info(_Pid, _Sid, _Info, SessionState = #session_state{}) ->
     {ok, SessionState}.
 
 close(Pid, Sid, _SessionState = #session_state{}) ->
