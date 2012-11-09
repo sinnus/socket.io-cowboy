@@ -237,11 +237,19 @@ process_messages([Message|Rest], State = #state{id = SessionId, callback = Callb
         heartbeat ->
             process_messages(Rest, State);
         {message, <<>>, EndPoint, Obj} ->
-            {ok, NewSessionState} = Callback:recv(self(), SessionId, {message, EndPoint, Obj}, SessionState),
-            process_messages(Rest, State#state{session_state = NewSessionState});
+            case Callback:recv(self(), SessionId, {message, EndPoint, Obj}, SessionState) of
+                {ok, NewSessionState} ->
+                    process_messages(Rest, State#state{session_state = NewSessionState});
+                {disconnect, NewSessionState} ->
+                    {stop, normal, ok, State#state{session_state = NewSessionState}}
+            end;
         {json, <<>>, EndPoint, Obj} ->
-            {ok, NewSessionState} = Callback:recv(self(), SessionId, {json, EndPoint, Obj}, SessionState),
-            process_messages(Rest, State#state{session_state = NewSessionState});
+            case Callback:recv(self(), SessionId, {json, EndPoint, Obj}, SessionState) of
+                {ok, NewSessionState} ->
+                    process_messages(Rest, State#state{session_state = NewSessionState});
+                {disconnect, NewSessionState} ->
+                    {stop, normal, ok, State#state{session_state = NewSessionState}}
+            end;
         _ ->
             %% Skip message
             process_messages(Rest, State)
