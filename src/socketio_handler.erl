@@ -22,7 +22,7 @@
 
 -record(http_state, {action, config, sid, heartbeat_tref, messages, pid}).
 
-init({tcp, http}, Req, [Config]) ->
+init({_, http}, Req, [Config]) ->
     {PathInfo, _} = cowboy_req:path_info(Req),
     {Method, _} = cowboy_req:method(Req),
     case PathInfo of
