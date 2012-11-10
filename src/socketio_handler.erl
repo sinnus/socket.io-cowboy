@@ -58,7 +58,7 @@ init({_, http}, Req, [Config]) ->
         [<<"websocket">>, _Sid] ->
             {upgrade, protocol, cowboy_websocket};
         _ ->
-            {ok, Req, Config}
+            {ok, Req, #http_state{config = Config}}
     end.
 
 %% Http handlers
@@ -116,7 +116,7 @@ terminate(_Req, _HttpState = #http_state{action = session_in_use}) ->
     ok;
 
 terminate(_Req, _HttpState = #http_state{heartbeat_tref = HeartbeatTRef, pid = Pid}) ->
-    safe_ubsub_caller(Pid, self()),
+    safe_unsub_caller(Pid, self()),
     case HeartbeatTRef of
         undefined ->
             ok;
@@ -138,7 +138,13 @@ reply_messages(Req, Messages, _Config = #config{protocol = Protocol}, SendNop) -
              end,
     cowboy_req:reply(200, text_headers(), Packet, Req).
 
-safe_ubsub_caller(Pid, Caller) ->
+safe_unsub_caller(undefined, _Caller) ->
+    ok;
+
+safe_unsub_caller(_Pid, undefined) ->
+    ok;
+
+safe_unsub_caller(Pid, Caller) ->
     try
         socketio_session:unsub_caller(Pid, Caller),
         ok
