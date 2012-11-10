@@ -22,6 +22,8 @@ encode({connect, Endpoint}) ->
     connect(Endpoint);
 encode(heartbeat) ->
     heartbeat();
+encode(nop) ->
+    nop();
 encode(disconnect) ->
     disconnect(<<>>).
 
@@ -37,6 +39,9 @@ disconnect(Endpoint) ->
 
 heartbeat() ->
     <<"2::">>.
+
+nop() ->
+    <<"8::">>.
 
 message(Id, EndPoint, Msg) when is_integer(Id) ->
     IdBin = binary:list_to_bin(integer_to_list(Id)),

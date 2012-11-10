@@ -77,7 +77,7 @@ handle(Req, HttpState = #http_state{action = create_session, config = #config{he
     {ok, Req1, HttpState};
 
 handle(Req, HttpState = #http_state{action = data, messages = Messages, config = Config}) ->
-    {ok, Req1} = reply_messages(Req, Messages, Config),
+    {ok, Req1} = reply_messages(Req, Messages, Config, false),
     {ok, Req1, HttpState};
 
 handle(Req, HttpState = #http_state{action = not_found}) ->
@@ -129,8 +129,13 @@ text_headers() ->
      {<<"Access-Control-Allow-Credentials">>, <<"true">>},
      {<<"Access-Control-Allow-Origin">>, <<"null">>}].
 
-reply_messages(Req, Messages, _Config = #config{protocol = Protocol}) ->
-    Packet = Protocol:encode(Messages),
+reply_messages(Req, Messages, _Config = #config{protocol = Protocol}, SendNop) ->
+    Packet = case {SendNop, Messages} of
+                 {true, []} ->
+                     Protocol:encode([nop]);
+                 _ ->
+                     Protocol:encode(Messages)
+             end,
     cowboy_req:reply(200, text_headers(), Packet, Req).
 
 safe_ubsub_caller(Pid, Caller) ->
@@ -149,7 +154,7 @@ safe_poll(Req, HttpState = #http_state{config = Config = #config{protocol = Prot
             {true, []} ->
                 {loop, Req, HttpState};
             _ ->
-                {ok, Req1} = reply_messages(Req, Messages, Config),
+                {ok, Req1} = reply_messages(Req, Messages, Config, true),
                 {ok, Req1, HttpState}
         end
     catch
