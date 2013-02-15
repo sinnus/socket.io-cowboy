@@ -13,29 +13,27 @@ start() ->
     ok = application:start(cowboy),
     ok = application:start(socketio),
 
-    Dispatch = [
-                {'_', [
-                       {[<<"socket.io">>, <<"1">>, '...'], socketio_handler, [socketio_session:configure([{heartbeat, 5000},
-                                                                                                          {heartbeat_timeout, 30000},
-                                                                                                          {session_timeout, 30000},
-                                                                                                          {callback, ?MODULE},
-                                                                                                          {protocol, socketio_data_protocol}])]},
-                       {['...'], cowboy_static, [
-                                                 {directory, <<"./priv">>},
-                                                 {mimetypes, [
-                                                              {<<".html">>, [<<"text/html">>]},
-                                                              {<<".css">>, [<<"text/css">>]},
-                                                              {<<".js">>, [<<"application/javascript">>]}]}
-                                                ]}
-                      ]}
-               ],
+    Dispatch = cowboy_router:compile([
+                                      {'_', [
+                                             {"/socket.io/1/[...]", socketio_handler, [socketio_session:configure([{heartbeat, 5000},
+                                                                                                                   {heartbeat_timeout, 30000},
+                                                                                                                   {session_timeout, 30000},
+                                                                                                                   {callback, ?MODULE},
+                                                                                                                   {protocol, socketio_data_protocol}])]},
+                                             {"/[...]", cowboy_static, [
+                                                                        {directory, <<"./priv">>},
+                                                                        {mimetypes, [
+                                                                                     {<<".html">>, [<<"text/html">>]},
+                                                                                     {<<".css">>, [<<"text/css">>]},
+                                                                                     {<<".js">>, [<<"application/javascript">>]}]}
+                                                                       ]}
+                                            ]}
+                                     ]),
 
     demo_mgr:start_link(),
 
     cowboy:start_http(socketio_http_listener, 100, [{host, "127.0.0.1"},
-                                                    {port, 8080}],
-                      [{dispatch, Dispatch}]
-                     ).
+                                                    {port, 8080}], [{env, [{dispatch, Dispatch}]}]).
 
 %% ---- Handlers
 open(Pid, Sid) ->

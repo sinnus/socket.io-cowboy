@@ -16,7 +16,7 @@
 -author('Kirill Trofimov <sinnus@gmail.com>').
 -include("socketio_internal.hrl").
 
--export([init/3, handle/2, info/3, terminate/2,
+-export([init/3, handle/2, info/3, terminate/3,
          websocket_init/3, websocket_handle/3,
          websocket_info/3, websocket_terminate/3]).
 
@@ -109,13 +109,13 @@ info({message_arrived, Pid}, Req, HttpState = #http_state{action = heartbeat}) -
 info(_Info, Req, HttpState) ->
     {ok, Req, HttpState}.
 
-terminate(_Req, _HttpState = #http_state{action = create_session}) ->
+terminate(_Reason, _Req, _HttpState = #http_state{action = create_session}) ->
     ok;
 
-terminate(_Req, _HttpState = #http_state{action = session_in_use}) ->
+terminate(_Reason, _Req, _HttpState = #http_state{action = session_in_use}) ->
     ok;
 
-terminate(_Req, _HttpState = #http_state{heartbeat_tref = HeartbeatTRef, pid = Pid}) ->
+terminate(_Reason, _Req, _HttpState = #http_state{heartbeat_tref = HeartbeatTRef, pid = Pid}) ->
     safe_unsub_caller(Pid, self()),
     case HeartbeatTRef of
         undefined ->
