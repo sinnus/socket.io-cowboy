@@ -19,7 +19,7 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/3, init/0, configure/1, create/3, find/1, pull/2, pull_no_wait/2, poll/1, send/2, recv/2,
+-export([start_link/4, init/0, configure/1, create/4, find/1, pull/2, pull_no_wait/2, poll/1, send/2, recv/2,
          send_message/2, send_obj/2, refresh/1, disconnect/1, unsub_caller/2]).
 
 %% gen_server callbacks
@@ -35,6 +35,7 @@
                 session_timeout_tref,
                 caller,
                 registered,
+                opts,
                 session_state}).
 
 %%%===================================================================
@@ -45,15 +46,16 @@ configure(Opts) ->
             heartbeat_timeout = proplists:get_value(heartbeat_timeout, Opts, 30000),
             session_timeout = proplists:get_value(session_timeout, Opts, 30000),
             callback = proplists:get_value(callback, Opts),
-            protocol = proplists:get_value(protocol, Opts, socketio_data_protocol)
+            protocol = proplists:get_value(protocol, Opts, socketio_data_protocol),
+            opts = proplists:get_value(opts, Opts, undefined)
            }.
 
 init() ->
     _ = ets:new(?ETS, [public, named_table]),
     ok.
 
-create(SessionId, SessionTimeout, Callback) ->
-    {ok, Pid} = socketio_session_sup:start_child(SessionId, SessionTimeout, Callback),
+create(SessionId, SessionTimeout, Callback, Opts) ->
+    {ok, Pid} = socketio_session_sup:start_child(SessionId, SessionTimeout, Callback, Opts),
     Pid.
 
 find(SessionId) ->
@@ -94,21 +96,22 @@ disconnect(Pid) ->
 unsub_caller(Pid, Caller) ->
     gen_server:call(Pid, {unsub_caller, Caller}).
 %%--------------------------------------------------------------------
-start_link(SessionId, SessionTimeout, Callback) ->
-    gen_server:start_link(?MODULE, [SessionId, SessionTimeout, Callback], []).
+start_link(SessionId, SessionTimeout, Callback, Opts) ->
+    gen_server:start_link(?MODULE, [SessionId, SessionTimeout, Callback, Opts], []).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-init([SessionId, SessionTimeout, Callback]) ->
+init([SessionId, SessionTimeout, Callback, Opts]) ->
     self() ! register_in_ets,
     TRef = erlang:send_after(SessionTimeout, self(), session_timeout),
     {ok, #state{id = SessionId,
                 messages = [],
                 registered = false,
                 callback = Callback,
+                opts = Opts,
                 session_timeout_tref = TRef,
                 session_timeout = SessionTimeout}}.
 
@@ -175,16 +178,16 @@ handle_cast(_Msg, State) ->
 handle_info(session_timeout, State) ->
     {stop, normal, State};
 
-handle_info(register_in_ets, State = #state{id = SessionId, registered = false, callback = Callback}) ->
+handle_info(register_in_ets, State = #state{id = SessionId, registered = false, callback = Callback, opts = Opts}) ->
     case ets:insert_new(?ETS, {SessionId, self()}) of
         true ->
-	    case Callback:open(self(), SessionId) of
-		{ok, SessionState} ->
-		    send(self(), {connect, <<>>}),
-		    {noreply, State#state{registered = true, session_state = SessionState}};
-		disconnect ->
-		    {stop, normal, State}
-	    end;
+            case Callback:open(self(), SessionId, Opts) of
+                {ok, SessionState} ->
+                    send(self(), {connect, <<>>}),
+                    {noreply, State#state{registered = true, session_state = SessionState}};
+                disconnect ->
+                    {stop, normal, State}
+            end;
         false ->
             {stop, session_id_exists, State}
     end;

@@ -16,5 +16,6 @@
                  heartbeat_timeout,
                  session_timeout,
                  callback,
-                 protocol
+                 protocol,
+                 opts
                 }).

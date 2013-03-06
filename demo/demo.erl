@@ -1,6 +1,6 @@
 -module(demo).
 
--export([start/0, open/2, recv/4, handle_info/4, close/3]).
+-export([start/0, open/3, recv/4, handle_info/4, close/3]).
 
 -record(session_state, {}).
 
@@ -36,7 +36,7 @@ start() ->
                                                     {port, 8080}], [{env, [{dispatch, Dispatch}]}]).
 
 %% ---- Handlers
-open(Pid, Sid) ->
+open(Pid, Sid, _Opts) ->
     erlang:send_after(5000, self(), tick),
     error_logger:info_msg("open ~p ~p~n", [Pid, Sid]),
     demo_mgr:add_session(Pid),
