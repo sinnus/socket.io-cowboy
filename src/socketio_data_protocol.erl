@@ -115,6 +115,13 @@ decode_packet(<<"4:", Rest/binary>>) ->
     {Id, R1} = id(Rest),
     {EndPoint, Data} = endpoint(R1),
     {json, Id, EndPoint, jsx:json_to_term(Data)};
+decode_packet(<<"5:", Rest/binary>>) ->
+    {Id, R1} = id(Rest),
+    {EndPoint, Data} = endpoint(R1),
+    Json = jsx:json_to_term(Data),
+    EventName = proplists:get_value(<<"name">>, Json),
+    EventArgs = proplists:get_value(<<"args">>, Json),
+    {event, Id, EndPoint, EventName, EventArgs};
 decode_packet(<<"7::", Rest/binary>>) ->
     {EndPoint, R1} = endpoint(Rest),
     case reason(R1) of
