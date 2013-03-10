@@ -20,6 +20,8 @@ encode({json, Id, EndPoint, Message}) ->
     json(Id, EndPoint, Message);
 encode({connect, Endpoint}) ->
     connect(Endpoint);
+encode({event, EventName, EventArgs}) ->
+    event(<<>>, <<>>, EventName, EventArgs);
 encode(heartbeat) ->
     heartbeat();
 encode(nop) ->
@@ -56,6 +58,12 @@ json(Id, EndPoint, Msg) when is_integer(Id) ->
 json(Id, EndPoint, Msg) when is_binary(Id) ->
     JsonBin = jsx:term_to_json(Msg),
     <<"4:", Id/binary, ":", EndPoint/binary, ":", JsonBin/binary>>.
+
+event(Id, EndPoint, EventName, EventArgs) when is_binary(Id), is_binary(EndPoint) ->
+    Msg = [{<<"name">>, EventName}, {<<"args">>, EventArgs}],
+    JsonBin = jsx:term_to_json(Msg),
+    <<"5:", Id/binary, ":", EndPoint/binary, ":", JsonBin/binary>>.
+
 
 error(EndPoint, Reason) ->
     [<<"7::">>, EndPoint, $:, Reason].
@@ -120,7 +128,10 @@ decode_packet(<<"5:", Rest/binary>>) ->
     {EndPoint, Data} = endpoint(R1),
     Json = jsx:json_to_term(Data),
     EventName = proplists:get_value(<<"name">>, Json),
-    EventArgs = proplists:get_value(<<"args">>, Json),
+    EventArgs = case proplists:get_value(<<"args">>, Json) of
+                    [null] -> [];
+                    [Args] -> Args
+                end,
     {event, Id, EndPoint, EventName, EventArgs};
 decode_packet(<<"7::", Rest/binary>>) ->
     {EndPoint, R1} = endpoint(Rest),
