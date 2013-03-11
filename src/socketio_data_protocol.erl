@@ -1,5 +1,7 @@
 -module(socketio_data_protocol).
--compile([export_all, {no_auto_import, [error/2]}]).
+-export([encode/1,
+         decode/1]).
+-compile([{no_auto_import, [error/2]}]).
 -include_lib("eunit/include/eunit.hrl").
 
 %% The source code was taken and modified from https://github.com/yrashk/socket.io-erlang/blob/master/src/socketio_data_v1.erl
