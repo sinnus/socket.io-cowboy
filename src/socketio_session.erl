@@ -253,7 +253,12 @@ process_messages([Message|Rest], State = #state{id = SessionId, callback = Callb
                 {disconnect, NewSessionState} ->
                     {stop, normal, ok, State#state{session_state = NewSessionState}}
             end;
-        _ ->
-            %% Skip message
-            process_messages(Rest, State)
+        {event, <<>>, EndPoint, EventName, EventArgs} ->
+            Msg = {event, EndPoint, EventName, EventArgs},
+            case Callback:recv(self(), SessionId, Msg, SessionState) of
+                {ok, NewSessionState} ->
+                    process_messages(Rest, State#state{session_state = NewSessionState});
+                {disconnect, NewSessionState} ->
+                    {stop, normal, ok, State#state{session_state = NewSessionState}}
+            end
     end.
