@@ -126,9 +126,7 @@ terminate(_Reason, _Req, _HttpState = #http_state{heartbeat_tref = HeartbeatTRef
     end.
 
 text_headers(Req) ->
-	{HeaderVal, _Req2} = cowboy_req:header(<<"origin">>, Req, <<"*">>),
-	%{ok, HeaderVal, _Req2} = cowboy_req:parse_header(<<"Origin">>, Req, {<<"*">>, []}),
-
+    {HeaderVal, _Req2} = cowboy_req:header(<<"origin">>, Req, <<"*">>),
     [{<<"content-Type">>, <<"text/plain; charset=utf-8">>},
      {<<"Cache-Control">>, <<"no-cache">>},
      {<<"Expires">>, <<"Sat, 25 Dec 1999 00:00:00 GMT">>},
