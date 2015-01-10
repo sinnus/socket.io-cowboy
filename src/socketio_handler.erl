@@ -74,7 +74,7 @@ handle(Req, HttpState = #http_state{action = create_session, config = #config{he
     _Pid = socketio_session:create(Sid, SessionTimeout, Callback, Opts),
 
     Result = <<":", HeartbeatTimeoutBin/binary, ":", SessionTimeoutBin/binary, ":websocket,xhr-polling">>,
-    {ok, Req1} = cowboy_req:reply(200, text_headers(), <<Sid/binary, Result/binary>>, Req),
+    {ok, Req1} = cowboy_req:reply(200, text_headers(Req), <<Sid/binary, Result/binary>>, Req),
     {ok, Req1, HttpState};
 
 handle(Req, HttpState = #http_state{action = data, messages = Messages, config = Config}) ->
@@ -94,7 +94,7 @@ handle(Req, HttpState = #http_state{action = session_in_use}) ->
     {ok, Req1, HttpState};
 
 handle(Req, HttpState = #http_state{action = ok}) ->
-    {ok, Req1} = cowboy_req:reply(200, text_headers(), <<>>, Req),
+    {ok, Req1} = cowboy_req:reply(200, text_headers(Req), <<>>, Req),
     {ok, Req1, HttpState};
 
 handle(Req, HttpState) ->
@@ -125,13 +125,17 @@ terminate(_Reason, _Req, _HttpState = #http_state{heartbeat_tref = HeartbeatTRef
             erlang:cancel_timer(HeartbeatTRef)
     end.
 
-text_headers() ->
+text_headers(Req) ->
+	{HeaderVal, _Req2} = cowboy_req:header(<<"origin">>, Req, <<"*">>),
+	%{ok, HeaderVal, _Req2} = cowboy_req:parse_header(<<"Origin">>, Req, {<<"*">>, []}),
+
     [{<<"content-Type">>, <<"text/plain; charset=utf-8">>},
      {<<"Cache-Control">>, <<"no-cache">>},
      {<<"Expires">>, <<"Sat, 25 Dec 1999 00:00:00 GMT">>},
      {<<"Pragma">>, <<"no-cache">>},
      {<<"Access-Control-Allow-Credentials">>, <<"true">>},
-     {<<"Access-Control-Allow-Origin">>, <<"null">>}].
+     {<<"Access-Control-Allow-Origin">>, <<"", HeaderVal/binary>>}
+     ].
 
 reply_messages(Req, Messages, _Config = #config{protocol = Protocol}, SendNop) ->
     Packet = case {SendNop, Messages} of
@@ -140,7 +144,7 @@ reply_messages(Req, Messages, _Config = #config{protocol = Protocol}, SendNop) -
                  _ ->
                      Protocol:encode(Messages)
              end,
-    cowboy_req:reply(200, text_headers(), Packet, Req).
+    cowboy_req:reply(200, text_headers(Req), Packet, Req).
 
 safe_unsub_caller(undefined, _Caller) ->
     ok;
@@ -169,7 +173,7 @@ safe_poll(Req, HttpState = #http_state{config = Config = #config{protocol = Prot
         end
     catch
         exit:{noproc, _} ->
-            {ok, RD} = cowboy_req:reply(200, text_headers(), Protocol:encode(disconnect), Req),
+            {ok, RD} = cowboy_req:reply(200, text_headers(Req), Protocol:encode(disconnect), Req),
             {ok, RD, HttpState#http_state{action = disconnect}}
     end.
 
