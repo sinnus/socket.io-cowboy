@@ -51,11 +51,9 @@ message(Id, EndPoint, Msg) when is_binary(Id) ->
 
 json(Id, EndPoint, Msg) when is_integer(Id) ->
     IdBin = binary:list_to_bin(integer_to_list(Id)),
-    %JsonBin = jsx:term_to_json(Msg),
     JsonBin = jsx:encode(Msg),
     <<"4:", IdBin/binary, ":", EndPoint/binary, ":", JsonBin/binary>>;
 json(Id, EndPoint, Msg) when is_binary(Id) ->
-    %JsonBin = jsx:term_to_json(Msg),
     JsonBin = jsx:encode(Msg),
     <<"4:", Id/binary, ":", EndPoint/binary, ":", JsonBin/binary>>.
 
@@ -116,7 +114,6 @@ decode_packet(<<"3:", Rest/binary>>) ->
 decode_packet(<<"4:", Rest/binary>>) ->
     {Id, R1} = id(Rest),
     {EndPoint, Data} = endpoint(R1),
-    %{json, Id, EndPoint, jsx:json_to_term(Data)};
     {json, Id, EndPoint, jsx:decode(Data)};
 decode_packet(<<"7::", Rest/binary>>) ->
     {EndPoint, R1} = endpoint(Rest),
