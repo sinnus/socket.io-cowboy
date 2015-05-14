@@ -5,6 +5,7 @@
 -record(session_state, {}).
 
 start() ->
+    ok = application:start(asn1),
     ok = application:start(sasl),
     ok = application:start(crypto),
     ok = application:start(public_key),
