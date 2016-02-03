@@ -184,7 +184,7 @@ websocket_init(_TransportName, Req, [Config]) ->
             erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
             {ok, Req, {Config, Pid}};
         {error, not_found} ->
-            {shutdown, {Config, undefined}}
+            {shutdown, Req}
     end.
 
 websocket_handle({text, Data}, Req, {Config = #config{protocol = Protocol}, Pid}) ->
