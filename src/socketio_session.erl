@@ -19,17 +19,14 @@
 -include("socketio_internal.hrl").
 
 %% API
--export([start_link/4, init/0, configure/1, create/4, find/1, pull/2, pull_no_wait/2, poll/1, send/2, recv/2,
+-export([start_link/3, configure/1, create/3, find/1, pull/2, pull_no_wait/2, poll/1, send/2, recv/2,
          send_message/2, send_obj/2, refresh/1, disconnect/1, unsub_caller/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(ETS, socketio_session_table).
-
--record(state, {id,
-                callback,
+-record(state, {callback,
                 messages,
                 session_timeout,
                 session_timeout_tref,
@@ -50,19 +47,16 @@ configure(Opts) ->
             opts = proplists:get_value(opts, Opts, undefined)
            }.
 
-init() ->
-    _ = ets:new(?ETS, [public, named_table]),
-    ok.
+create(SessionTimeout, Callback, Opts) ->
+    {ok, Pid} = socketio_session_sup:start_child(SessionTimeout, Callback, Opts),
+    base64:encode(term_to_binary(Pid)).
 
-create(SessionId, SessionTimeout, Callback, Opts) ->
-    {ok, Pid} = socketio_session_sup:start_child(SessionId, SessionTimeout, Callback, Opts),
-    Pid.
-
-find(SessionId) ->
-    case global:whereis_name(SessionId) of
+find(PidBin) ->
+    Pid = binary_to_term(base64:decode(PidBin)),
+    case process_info(Pid) of
         undefined ->
             {error, not_found};
-        Pid ->
+        _ ->
             {ok, Pid}
     end.
 
@@ -96,19 +90,18 @@ disconnect(Pid) ->
 unsub_caller(Pid, Caller) ->
     gen_server:call(Pid, {unsub_caller, Caller}).
 %%--------------------------------------------------------------------
-start_link(SessionId, SessionTimeout, Callback, Opts) ->
-    gen_server:start_link({global, SessionId}, ?MODULE, [SessionId, SessionTimeout, Callback, Opts], []).
+start_link(SessionTimeout, Callback, Opts) ->
+    gen_server:start_link(?MODULE, [SessionTimeout, Callback, Opts], []).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
 %%--------------------------------------------------------------------
-init([SessionId, SessionTimeout, Callback, Opts]) ->
+init([SessionTimeout, Callback, Opts]) ->
     self() ! register_in_ets,
     TRef = erlang:send_after(SessionTimeout, self(), session_timeout),
-    {ok, #state{id = SessionId,
-                messages = [],
+    {ok, #state{messages = [],
                 registered = false,
                 callback = Callback,
                 opts = Opts,
@@ -178,22 +171,17 @@ handle_cast(_Msg, State) ->
 handle_info(session_timeout, State) ->
     {stop, normal, State};
 
-handle_info(register_in_ets, State = #state{id = SessionId, registered = false, callback = Callback, opts = Opts}) ->
-    case ets:insert_new(?ETS, {SessionId, self()}) of
-        true ->
-            case Callback:open(self(), SessionId, Opts) of
-                {ok, SessionState} ->
-                    send(self(), {connect, <<>>}),
-                    {noreply, State#state{registered = true, session_state = SessionState}};
-                disconnect ->
-                    {stop, normal, State}
-            end;
-        false ->
-            {stop, session_id_exists, State}
+handle_info(register_in_ets, State = #state{registered = false, callback = Callback, opts = Opts}) ->
+    case Callback:open(self(), Opts) of
+        {ok, SessionState} ->
+            send(self(), {connect, <<>>}),
+            {noreply, State#state{registered = true, session_state = SessionState}};
+        disconnect ->
+            {stop, normal, State}
     end;
 
-handle_info(Info, State = #state{id = Id, registered = true, callback = Callback, session_state = SessionState}) ->
-    case Callback:handle_info(self(), Id, Info, SessionState) of
+handle_info(Info, State = #state{registered = true, callback = Callback, session_state = SessionState}) ->
+    case Callback:handle_info(self(), Info, SessionState) of
         {ok, NewSessionState} ->
             {noreply, State#state{session_state = NewSessionState}};
         {disconnect, NewSessionState} ->
@@ -203,11 +191,10 @@ handle_info(Info, State = #state{id = Id, registered = true, callback = Callback
 handle_info(_Info, State) ->
     {noreply, State}.
 %%--------------------------------------------------------------------
-terminate(_Reason, _State = #state{id = SessionId, registered = Registered, callback = Callback, session_state = SessionState}) ->
-    ets:delete(?ETS, SessionId),
+terminate(_Reason, _State = #state{registered = Registered, callback = Callback, session_state = SessionState}) ->
     case Registered of
         true ->
-            Callback:close(self(), SessionId, SessionState),
+            Callback:close(self(), SessionState),
             ok;
         _ ->
             ok
@@ -229,7 +216,7 @@ refresh_session_timeout(State = #state{session_timeout = Timeout, session_timeou
 process_messages([], _State) ->
     {reply, ok, _State};
 
-process_messages([Message|Rest], State = #state{id = SessionId, callback = Callback, session_state = SessionState}) ->
+process_messages([Message|Rest], State = #state{callback = Callback, session_state = SessionState}) ->
     case Message of
         {disconnect, _EndPoint} ->
             {stop, normal, ok, State};
@@ -240,14 +227,14 @@ process_messages([Message|Rest], State = #state{id = SessionId, callback = Callb
         heartbeat ->
             process_messages(Rest, State);
         {message, <<>>, EndPoint, Obj} ->
-            case Callback:recv(self(), SessionId, {message, EndPoint, Obj}, SessionState) of
+            case Callback:recv(self(), {message, EndPoint, Obj}, SessionState) of
                 {ok, NewSessionState} ->
                     process_messages(Rest, State#state{session_state = NewSessionState});
                 {disconnect, NewSessionState} ->
                     {stop, normal, ok, State#state{session_state = NewSessionState}}
             end;
         {json, <<>>, EndPoint, Obj} ->
-            case Callback:recv(self(), SessionId, {json, EndPoint, Obj}, SessionState) of
+            case Callback:recv(self(), {json, EndPoint, Obj}, SessionState) of
                 {ok, NewSessionState} ->
                     process_messages(Rest, State#state{session_state = NewSessionState});
                 {disconnect, NewSessionState} ->

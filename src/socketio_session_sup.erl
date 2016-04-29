@@ -16,7 +16,7 @@
 -author('Kirill Trofimov <sinnus@gmail.com>').
 -behaviour(supervisor).
 
--export([start_link/0, start_child/4]).
+-export([start_link/0, start_child/3]).
 -export([init/1]).
 
 %% --------------------------------------------------------------------------
@@ -30,5 +30,5 @@ init([]) ->
           [{undefined, {socketio_session, start_link, []},
             temporary, 5000, worker, [socketio_session]}]}}.
 
-start_child(SessionId, SessionTimeout, Callback, Opts) ->
-   supervisor:start_child(?MODULE, [SessionId, SessionTimeout, Callback, Opts]).
+start_child(SessionTimeout, Callback, Opts) ->
+   supervisor:start_child(?MODULE, [SessionTimeout, Callback, Opts]).
