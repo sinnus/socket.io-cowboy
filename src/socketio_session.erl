@@ -59,10 +59,10 @@ create(SessionId, SessionTimeout, Callback, Opts) ->
     Pid.
 
 find(SessionId) ->
-    case ets:lookup(?ETS, SessionId) of
-        [] ->
+    case global:whereis_name(SessionId) of
+        undefined ->
             {error, not_found};
-        [{_, Pid}] ->
+        Pid ->
             {ok, Pid}
     end.
 
@@ -97,7 +97,7 @@ unsub_caller(Pid, Caller) ->
     gen_server:call(Pid, {unsub_caller, Caller}).
 %%--------------------------------------------------------------------
 start_link(SessionId, SessionTimeout, Callback, Opts) ->
-    gen_server:start_link(?MODULE, [SessionId, SessionTimeout, Callback, Opts], []).
+    gen_server:start_link({global, SessionId}, ?MODULE, [SessionId, SessionTimeout, Callback, Opts], []).
 
 %%%===================================================================
 %%% gen_server callbacks
