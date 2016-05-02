@@ -99,7 +99,7 @@ start_link(SessionTimeout, Callback, Opts) ->
 
 %%--------------------------------------------------------------------
 init([SessionTimeout, Callback, Opts]) ->
-    self() ! register_in_ets,
+    self() ! open_connection,
     TRef = erlang:send_after(SessionTimeout, self(), session_timeout),
     {ok, #state{messages = [],
                 registered = false,
@@ -171,7 +171,7 @@ handle_cast(_Msg, State) ->
 handle_info(session_timeout, State) ->
     {stop, normal, State};
 
-handle_info(register_in_ets, State = #state{registered = false, callback = Callback, opts = Opts}) ->
+handle_info(open_connection, State = #state{registered = false, callback = Callback, opts = Opts}) ->
     case Callback:open(self(), Opts) of
         {ok, SessionState} ->
             send(self(), {connect, <<>>}),
