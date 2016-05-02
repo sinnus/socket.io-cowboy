@@ -53,11 +53,11 @@ create(SessionTimeout, Callback, Opts) ->
 
 find(PidBin) ->
     Pid = binary_to_term(base64:decode(PidBin)),
-    case process_info(Pid) of
-        undefined ->
-            {error, not_found};
+    case rpc:call(erlang:node(Pid), erlang, is_process_alive, [Pid]) of
+        true ->
+            {ok, Pid};
         _ ->
-            {ok, Pid}
+            {error, not_found}
     end.
 
 pull(Pid, Caller) ->
