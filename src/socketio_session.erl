@@ -49,10 +49,10 @@ configure(Opts) ->
 
 create(SessionTimeout, Callback, Opts) ->
     {ok, Pid} = socketio_session_sup:start_child(SessionTimeout, Callback, Opts),
-    base64:encode(term_to_binary(Pid)).
+    list_to_binary(http_uri:encode(base64:encode_to_string(term_to_binary(Pid)))).
 
 find(PidBin) ->
-    Pid = binary_to_term(base64:decode(PidBin)),
+    Pid = binary_to_term(base64:decode(http_uri:decode(binary_to_list(PidBin)))),
     case rpc:call(erlang:node(Pid), erlang, is_process_alive, [Pid]) of
         true ->
             {ok, Pid};
