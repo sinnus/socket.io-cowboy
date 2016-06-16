@@ -28,9 +28,6 @@ start_link() ->
 init([]) ->
 	{ok, {{one_for_one, 10, 10},
           [
-           {uuids, {uuids, start, []},
-            permanent, 5000, worker, [uuids]},
-
            {socketio_session_sup, {socketio_session_sup, start_link, []},
             permanent, 5000, supervisor, [socketio_session_sup]}
           ]}}.

@@ -26,7 +26,6 @@ start() ->
     ok = application:start(socketio).
 
 start(_Type, _Args) ->
-    socketio_session:init(),
     socketio_sup:start_link().
 
 stop(_State) ->

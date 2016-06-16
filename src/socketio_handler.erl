@@ -66,15 +66,13 @@ handle(Req, HttpState = #http_state{action = create_session, config = #config{he
                                                                               session_timeout = SessionTimeout,
                                                                               opts = Opts,
                                                                               callback = Callback}}) ->
-    Sid = uuids:new(),
-
     HeartbeatTimeoutBin = list_to_binary(integer_to_list(HeartbeatTimeout div 1000)),
     SessionTimeoutBin = list_to_binary(integer_to_list(SessionTimeout div 1000)),
 
-    _Pid = socketio_session:create(Sid, SessionTimeout, Callback, Opts),
+    Pid = socketio_session:create(SessionTimeout, Callback, Opts),
 
     Result = <<":", HeartbeatTimeoutBin/binary, ":", SessionTimeoutBin/binary, ":websocket,xhr-polling">>,
-    {ok, Req1} = cowboy_req:reply(200, text_headers(), <<Sid/binary, Result/binary>>, Req),
+    {ok, Req1} = cowboy_req:reply(200, text_headers(), <<Pid/binary, Result/binary>>, Req),
     {ok, Req1, HttpState};
 
 handle(Req, HttpState = #http_state{action = data, messages = Messages, config = Config}) ->
@@ -184,7 +182,7 @@ websocket_init(_TransportName, Req, [Config]) ->
             erlang:start_timer(Config#config.heartbeat, self(), {?MODULE, Pid}),
             {ok, Req, {Config, Pid}};
         {error, not_found} ->
-            {shutdown, {Config, undefined}}
+            {shutdown, Req}
     end.
 
 websocket_handle({text, Data}, Req, {Config = #config{protocol = Protocol}, Pid}) ->

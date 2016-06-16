@@ -111,6 +111,10 @@ decode_packet(<<"3:", Rest/binary>>) ->
     {Id, R1} = id(Rest),
     {EndPoint, Data} = endpoint(R1),
     {message, Id, EndPoint, Data};
+decode_packet(<<"5:", Rest/binary>>) ->
+    {Id, R1} = id(Rest),
+    {EndPoint, Data} = endpoint(R1),
+    {message, Id, EndPoint, Data};
 decode_packet(<<"4:", Rest/binary>>) ->
     {Id, R1} = id(Rest),
     {EndPoint, Data} = endpoint(R1),
