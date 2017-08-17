@@ -151,8 +151,8 @@ safe_unsub_caller(Pid, Caller) ->
         socketio_session:unsub_caller(Pid, Caller),
         ok
     catch
-        exit:{noproc, _} ->
-            error
+        exit:{noproc, _} -> error;
+        exit:{{nodedown,_},_} -> error
     end.
 
 safe_poll(Req, HttpState = #http_state{config = Config = #config{protocol = Protocol}}, Pid, WaitIfEmpty) ->
