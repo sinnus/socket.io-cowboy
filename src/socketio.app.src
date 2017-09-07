@@ -1,6 +1,6 @@
 {application, socketio, [
 	{description, "Socketio for cowboy."},
-	{vsn, "0.1.0"},
+	{vsn, "0.2.0"},
 	{modules, []},
 	{registered, [socketio_sup]},
 	{applications, [
