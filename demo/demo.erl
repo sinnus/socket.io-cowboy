@@ -5,11 +5,13 @@
 -record(session_state, {}).
 
 start() ->
+    ok = application:start(asn1),
     ok = application:start(sasl),
     ok = application:start(crypto),
     ok = application:start(public_key),
     ok = application:start(ssl),
     ok = application:start(ranch),
+    ok = application:start(cowlib),
     ok = application:start(cowboy),
     ok = application:start(socketio),
 
@@ -20,13 +22,7 @@ start() ->
                                                                                                                    {session_timeout, 30000},
                                                                                                                    {callback, ?MODULE},
                                                                                                                    {protocol, socketio_data_protocol}])]},
-                                             {"/[...]", cowboy_static, [
-                                                                        {directory, <<"./priv">>},
-                                                                        {mimetypes, [
-                                                                                     {<<".html">>, [<<"text/html">>]},
-                                                                                     {<<".css">>, [<<"text/css">>]},
-                                                                                     {<<".js">>, [<<"application/javascript">>]}]}
-                                                                       ]}
+                                             {"/[...]", cowboy_static, {dir, <<"./priv">>, [{mimetypes, cow_mimetypes, web}]}}
                                             ]}
                                      ]),
 
