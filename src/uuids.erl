@@ -35,15 +35,15 @@ new() ->
     gen_server:call(?MODULE, create).
 
 random() ->
-    list_to_binary(to_hex(crypto:rand_bytes(16))).
+    list_to_binary(to_hex(crypto:strong_rand_bytes(16))).
 
 utc_random() ->
-    Now = {_, _, Micro} = now(),
+    Now = {_, _, Micro} = os:timestamp(),
     Nowish = calendar:now_to_universal_time(Now),
     Nowsecs = calendar:datetime_to_gregorian_seconds(Nowish),
     Then = calendar:datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}}),
     Prefix = io_lib:format("~14.16.0b", [(Nowsecs - Then) * 1000000 + Micro]),
-    list_to_binary(Prefix ++ to_hex(crypto:rand_bytes(9))).
+    list_to_binary(Prefix ++ to_hex(crypto:strong_rand_bytes(9))).
 
 init([]) ->
 %%    ok = couch_config:register(
@@ -81,10 +81,10 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 new_prefix() ->
-    to_hex((crypto:rand_bytes(13))).
+    to_hex((crypto:strong_rand_bytes(13))).
 
 inc() ->
-    crypto:rand_uniform(1, 16#ffe).
+    rand:uniform(16#ffe).
 
 state() ->
 %    AlgoStr = couch_config:get("uuids", "algorithm", "random"),
